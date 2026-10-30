@@ -5,6 +5,10 @@ import type { NextConfig } from "next";
 // makes a route dynamic) is simpler to reason about for access control.
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  images: {
+    // Images uploaded in the POS live in Supabase Storage's public buckets.
+    remotePatterns: [{ protocol: "https", hostname: "*.supabase.co", pathname: "/storage/v1/object/public/**" }],
+  },
   experimental: {
     // Two root layouts (website and POS) need a standalone 404 page:
     // app/global-not-found.tsx.

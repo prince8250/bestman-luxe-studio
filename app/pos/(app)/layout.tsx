@@ -4,6 +4,7 @@ import { BottomBar } from "@/components/pos/shell/bottom-bar";
 import { Sidebar } from "@/components/pos/shell/sidebar";
 import { StatusCard } from "@/components/pos/shell/status-card";
 import { TopBar } from "@/components/pos/shell/top-bar";
+import { Toaster } from "@/components/ui/sonner";
 import { requirePosUser } from "@/lib/auth/require-pos-user";
 
 // Every page in this group needs an active POS user, checked here on the
@@ -22,6 +23,8 @@ export default async function PosAppLayout({ children }: LayoutProps<"/pos">) {
         <div className="flex flex-1 flex-col pb-20 md:pb-0">{children}</div>
       </div>
       <BottomBar role={user.role} />
+      {/* Saved and error messages. Light theme, whatever the PC's setting. */}
+      <Toaster theme="light" position="top-center" richColors closeButton />
     </div>
   );
 }

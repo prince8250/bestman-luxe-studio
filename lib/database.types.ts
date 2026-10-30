@@ -1310,10 +1310,16 @@ export type Database = {
         Args: { p_business_date: string; p_reason: string }
         Returns: undefined
       }
+      reorder_rows: {
+        Args: { p_ids: string[]; p_table: string }
+        Returns: undefined
+      }
       request_void: {
         Args: { p_reason: string; p_sale_id: string }
         Returns: string
       }
+      save_service: { Args: { payload: Json }; Returns: string }
+      update_service_prices: { Args: { changes: Json }; Returns: number }
       void_sale: {
         Args: { p_reason: string; p_sale_id: string }
         Returns: undefined

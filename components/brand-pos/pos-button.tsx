@@ -43,7 +43,10 @@ export interface PosButtonProps
 
 export function PosButton({ className, variant, size, fullWidth, asChild = false, ...props }: PosButtonProps) {
   const Comp = asChild ? Slot.Root : "button";
-  return <Comp className={cn(posButtonVariants({ variant, size, fullWidth }), className)} {...props} />;
+  // A plain <button> submits its form by default; ours only submit when asked
+  // (type="submit"), so a button added to a form can never submit it by accident.
+  const defaultType = asChild ? {} : { type: "button" as const };
+  return <Comp className={cn(posButtonVariants({ variant, size, fullWidth }), className)} {...defaultType} {...props} />;
 }
 
 export { posButtonVariants };
