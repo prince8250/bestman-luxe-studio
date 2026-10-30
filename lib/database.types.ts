@@ -1314,6 +1314,7 @@ export type Database = {
       }
       create_appointment: { Args: { payload: Json }; Returns: Json }
       create_sale: { Args: { payload: Json }; Returns: Json }
+      customer_detail: { Args: { p_customer_id: string }; Returns: Json }
       customer_lookup: { Args: { p_phone: string }; Returns: Json }
       decide_void_request: {
         Args: { p_approve: boolean; p_note: string; p_request_id: string }
@@ -1361,6 +1362,15 @@ export type Database = {
       sale_detail: { Args: { p_sale_id: string }; Returns: Json }
       sample_data_summary: { Args: never; Returns: Json }
       save_service: { Args: { payload: Json }; Returns: string }
+      search_customers: {
+        Args: {
+          p_limit?: number
+          p_offset?: number
+          p_phone?: string
+          p_query?: string
+        }
+        Returns: Json
+      }
       search_sales: { Args: { p_filters?: Json }; Returns: Json }
       update_service_prices: { Args: { changes: Json }; Returns: number }
       void_sale: {

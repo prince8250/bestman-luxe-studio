@@ -86,6 +86,7 @@ declare
   v_request2 uuid;
   v_sale3 uuid;
   v_item3 uuid;
+  v_customer uuid;
   v_count bigint;
   v_close jsonb;
   v_slot timestamptz := date_trunc('hour', now()) + interval '3 days';
@@ -694,6 +695,60 @@ begin
   perform pg_temp.expect(v_message = 'no_change', 'reassigning to the same staff member is refused', v_message);
   v_message := pg_temp.run_as(v_owner, format($q$ select public.reassign_sale_item_staff((select id from public.sale_items where sale_id = %L limit 1), %L, 'x') $q$, v_sale2, v_kofi));
   perform pg_temp.expect(v_message = 'sale_voided', 'a line on a voided sale cannot be reassigned', v_message);
+
+  -- Customers (spec 13): two paid sales and one voided sale for one number.
+  perform pg_temp.call_as(v_counter, format($q$
+    select public.create_sale('{"client_request_id": "%s", "customer_phone": "+233209999050", "customer_name": "Test Kojo",
+      "payments": [{"method": "cash", "amount": 4500}],
+      "items": [{"service_id": "%s", "staff_id": "%s", "unit_price": 4500, "quantity": 1}]}'::jsonb)
+  $q$, gen_random_uuid(), v_wash, v_kofi));
+  perform pg_temp.call_as(v_counter, format($q$
+    select public.create_sale('{"client_request_id": "%s", "customer_phone": "+233209999050",
+      "payments": [{"method": "momo", "amount": 9000}],
+      "items": [{"service_id": "%s", "staff_id": "%s", "unit_price": 4500, "quantity": 2}]}'::jsonb)
+  $q$, gen_random_uuid(), v_wash, v_kwame));
+  v_result := pg_temp.call_as(v_counter, format($q$
+    select public.create_sale('{"client_request_id": "%s", "customer_phone": "+233209999050",
+      "payments": [{"method": "cash", "amount": 4500}],
+      "items": [{"service_id": "%s", "staff_id": "%s", "unit_price": 4500, "quantity": 1}]}'::jsonb)
+  $q$, gen_random_uuid(), v_wash, v_kwame));
+  perform pg_temp.run_as(v_owner, format($q$ select public.void_sale(%L, 'Test void') $q$, v_result ->> 'sale_id'));
+  perform pg_temp.as_db_owner();
+  select id into v_customer from public.customers where phone = '+233209999050';
+
+  v_result := pg_temp.call_as(v_owner, format($q$ select public.customer_detail(%L) $q$, v_customer));
+  perform pg_temp.expect((v_result -> 'stats' ->> 'visits')::integer = 2
+    and (v_result -> 'stats' ->> 'total_spent')::integer = 13500
+    and v_result -> 'favorite_service' ->> 'name' = 'Test wash' and (v_result -> 'favorite_service' ->> 'times')::integer = 3
+    and v_result -> 'usual_staff' ->> 'name' is not null
+    and jsonb_array_length(v_result -> 'sales') = 3,
+    'customer_detail counts paid visits and spending only (the voided sale is listed but not counted)', left(v_result::text, 300));
+  v_result := pg_temp.call_as(v_counter, format($q$ select public.customer_detail(%L) $q$, v_customer));
+  perform pg_temp.expect((v_result -> 'stats' ->> 'visits')::integer = 2
+    and v_result -> 'stats' -> 'total_spent' = 'null'::jsonb
+    and not exists (select 1 from jsonb_array_elements(v_result -> 'sales') s where s ->> 'total' is not null),
+    'the counter sees the visits but no money', left(v_result::text, 300));
+
+  perform pg_temp.expect(
+    (pg_temp.call_as(v_counter, $q$ select public.search_customers(null, '+233209999050') $q$) -> 'rows' -> 0 ->> 'visits')::integer = 2
+    and (pg_temp.call_as(v_counter, $q$ select public.search_customers('020 999 9050') $q$) ->> 'count')::integer = 1
+    and (pg_temp.call_as(v_counter, $q$ select public.search_customers('233209999050') $q$) ->> 'count')::integer = 1
+    and (pg_temp.call_as(v_counter, $q$ select public.search_customers('9999050') $q$) ->> 'count')::integer = 1
+    and (pg_temp.call_as(v_counter, $q$ select public.search_customers('test koj') $q$) ->> 'count')::integer = 1,
+    'search_customers finds a customer by any common phone format, part of the number, or part of the name');
+  perform pg_temp.expect(pg_temp.run_as(null, $q$ select public.search_customers('x') $q$) like 'permission denied%'
+    and pg_temp.run_as(null, format($q$ select public.customer_detail(%L) $q$, v_customer)) like 'permission denied%',
+    'visitors cannot search or open customers');
+
+  perform pg_temp.run_as(v_owner, format($q$ update public.customers set blocked = true, blocked_reason = 'Two no-shows' where id = %L $q$, v_customer));
+  v_result := pg_temp.call_as(v_counter, format($q$ select public.customer_detail(%L) $q$, v_customer));
+  perform pg_temp.expect((v_result ->> 'blocked')::boolean and v_result ->> 'blocked_reason' = 'Two no-shows'
+    and v_result -> 'blocked_by' ->> 'name' = 'Test Owner',
+    'blocking a number is logged and shown on the customer with who blocked it', left(v_result::text, 300));
+  v_message := pg_temp.run_as(v_counter, format($q$ update public.customers set full_name = 'Kojo Mensah', notes = 'Likes a low fade' where id = %L $q$, v_customer));
+  perform pg_temp.as_db_owner();
+  perform pg_temp.expect(v_message = 'OK' and (select full_name from public.customers where id = v_customer) = 'Kojo Mensah',
+    'the counter can edit a customer''s name and notes', v_message);
 
   -- Owner alerts are claimed once per occurrence (a rerun job or a retry
   -- cannot queue a second SMS for the same thing).

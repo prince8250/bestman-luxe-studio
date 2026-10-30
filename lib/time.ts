@@ -115,6 +115,13 @@ export function formatAccraDayTime(value: Date | string): string {
   return dayAndTime.format(toDate(value));
 }
 
+const dayOnly = new Intl.DateTimeFormat("en-GB", { timeZone: STUDIO_TIME_ZONE, weekday: "short", day: "numeric", month: "short" });
+
+// "Fri 30 Oct" (the studio day of a moment)
+export function formatAccraDay(value: Date | string): string {
+  return dayOnly.format(toDate(value));
+}
+
 // "Fri 30 Oct 2026, 08:12" (receipts)
 export function formatAccraDateTime(value: Date | string): string {
   return fullDateAndTime.format(toDate(value));

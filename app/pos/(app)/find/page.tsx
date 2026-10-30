@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 
 import { PageHeader } from "@/components/brand-pos/page-header";
 import { requirePosUser } from "@/lib/auth/require-pos-user";
+import { parseCustomerSearch } from "@/lib/customers/customers";
+import { normalizePhone } from "@/lib/phone";
 import { classifyFindQuery } from "@/lib/pos/find";
 import { parseSearchResult } from "@/lib/sales/history";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -17,14 +19,29 @@ const KIND_LABEL = {
 } as const;
 
 // Find results. A receipt number opens that sale directly (spec 10; a counter
-// user only finds today's sales). Phone numbers and booking codes are wired in
-// specs 13 and 36; until then this shows what was understood.
+// user only finds today's sales), and a phone number opens the customer (spec
+// 13). Booking codes are wired in spec 36; until then this shows what was
+// understood.
 export default async function FindPage({ searchParams }: PageProps<"/pos/find">) {
   const user = await requirePosUser();
   const { q } = await searchParams;
   const query = classifyFindQuery(typeof q === "string" ? q : "");
 
   let message = "Opening this from Find is not built yet.";
+  if (query.kind === "phone") {
+    // Spec 13: a phone number in any common Ghana format opens the customer.
+    const phone = normalizePhone(query.value);
+    if (phone) {
+      const supabase = await createSupabaseServerClient();
+      const { data, error } = await supabase.rpc("search_customers", { p_phone: phone, p_limit: 1 });
+      if (error) throw new Error(`search_customers failed: ${error.message}`);
+      const customer = parseCustomerSearch(data).rows[0];
+      if (customer) redirect(`/pos/customers/${customer.id}`);
+    }
+    message = phone
+      ? "No customer has this number yet. A customer is added when a sale or booking has their phone number."
+      : "This is not a valid phone number. Type it like 024 456 5866 or +233 24 456 5866.";
+  }
   if (query.kind === "receipt") {
     const supabase = await createSupabaseServerClient();
     const { data, error } = await supabase.rpc("search_sales", { p_filters: { receipt_no: query.value, limit: 1 } });

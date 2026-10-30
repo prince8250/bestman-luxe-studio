@@ -4,11 +4,11 @@ Update this file whenever the current phase, active feature, or implementation s
 
 ## Current Phase
 
-- Phase 3: POS core (the counter).
+- Phase 4: Reports, close day, and owner oversight.
 
 ## Current Goal
 
-- `13-customers.md`.
+- `14-report-engine.md`.
 
 ## Completed
 
@@ -36,6 +36,8 @@ Update this file whenever the current phase, active feature, or implementation s
 
 - **12 Record a past sale**: New sale has **Record a past sale** (top of the ticket): a date (min = today − the account's limit, max = today) and a time; the ticket stays blocked until both are valid ("Enter the time the sale happened", "That time is in the future", "up to N days back"), and the button reads **SAVE PAST SALE**. The past date and time live on the ticket, so they survive a refresh with the draft (an older draft without them loads as a normal sale). `confirmSaleAction` sends `paid_at` (the Accra date and time as an instant); `create_sale` already refuses the future and the limit (owner 14 days, counter `counter_backdate_days`), sets `is_backdated`, writes `sale_backdated` to `audit_log` and a `backdated_sale` owner alert, and flags `after_close` when that day was closed. A past sale does not print automatically (the customer has left; the success panel offers Print receipt), and after saving the mode stays on with the same date and an empty time, for entering a stack of paper sales. The "Past sale" badge shows in the sales list and on the sale page (from spec 10); day reports are spec 14/16 and group by `paid_at`. `/pos/paper-sheet` (outside the shell, both roles): a blank A4 sheet with the studio name, date / written by / page, 22 rows (time, customer phone, service, staff, amount, payment with Cash · MoMo · Card to circle, and an "Entered" box) and cash / MoMo / card totals; linked from the past-sale panel. Owner guide: "When the internet or power is down", including open question 15 (backup MiFi and a small UPS, no code). Database tests (104): the owner cannot go beyond 14 days and can go 10 days (beyond the counter's 3); a counter sale backdated to yesterday 14:30 lands on yesterday, is flagged and logged, and shows in yesterday's `search_sales`. Unit tests for the past-sale rules and payload. Verified in the browser as the owner at 1280, 768, and 375px: a future time is refused on screen; Haircuts recorded for Thu 29 Oct 14:30 (BLS-000254) shows in "Yesterday" with "Past sale" and "After close" badges; the paper sheet printed through headless Chrome to one A4 page (controls hidden, every column header fits). Not verified by hand: the counter account's past-sale limit on screen (the database test covers it).
 
+- **13 Customers**: `/pos/customers` (both roles): search box (a full phone number in any common Ghana format is matched exactly as E.164; otherwise part of the name or part of the number, for example `000 0106`), most recent visit first, 50 per page, table from tablet width and cards on a phone, "Blocked online" badge. Customer page `/pos/customers/[id]`: name and phone, tiles for visits (paid sales only, since the first visit), last visit, total spent (owner only), favourite service, and usual staff; sales (voided ones listed and marked; a counter user can open only today's, older ones are plain text) and appointments with their status; edit name and notes (both roles; the phone is the identity and is not editable); owner **Block online booking** (reason required) / **Unblock**, with a red banner showing the reason and who blocked it when. Find: a phone number in any format opens the customer (or says no customer has it yet). Migration `20261030230000`: `search_customers(query, phone, limit, offset)` and `customer_detail(id)`, security definer, money for the owner only; name and notes updates go through the existing RLS, column grants, and `customers_guard` trigger, and blocks are logged by the existing `customers_audit` trigger. Database tests (110): two paid sales and one voided for one number give 2 visits and the right total (voided listed, not counted), favourite service and usual staff, the counter sees no money, search by `020 999 9050`, `233209999050`, part of the number, or part of the name, visitors refused, a block shows with who blocked it, the counter edits name and notes. Verified in the browser as the owner at 1280, 768, and 375px: Find "+233 20 000 0106" opened Kwesi Darko (6 visits and GHS 350.00, matching the sales table; his voided BLS-000143 listed and not counted); every phone format and "kwesi" found him; blocking needed a reason, showed the banner, and wrote `customer_blocked` with the reason to `audit_log`; unblocked again; a notes edit saved (sample note restored afterwards). Not verified by hand: the customer pages signed in as the counter (the database tests cover what the counter gets).
+
 ## Development Database And Test Accounts
 
 - Development project: `bestman-luxe-studio` (ref `xpcsmqwdpswnvzyterwx`, eu-central-1, free plan). The CLI is linked (`npx supabase link --project-ref xpcsmqwdpswnvzyterwx`); `npm run db:push` applies new migrations.
@@ -49,7 +51,7 @@ Update this file whenever the current phase, active feature, or implementation s
 
 ## Next Up
 
-- `13-customers.md`, then `14-report-engine.md` (Phase 4).
+- `14-report-engine.md`, then `15-pos-dashboard.md`.
 
 ## Build Order
 
@@ -75,7 +77,7 @@ Specs live in `context/feature-specs/`. Build in order unless the developer says
 - [x] 10 Sales history, voids, and void requests
 - [x] 11 Reassign staff and edit a paid sale
 - [x] 12 Record a past sale (outage fallback)
-- [ ] 13 Customers
+- [x] 13 Customers
 
 **Phase 4: Reports, close day, and owner oversight**
 - [ ] 14 Report engine (SQL)
