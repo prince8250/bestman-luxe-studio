@@ -28,6 +28,17 @@ const dayAndTime = new Intl.DateTimeFormat("en-GB", {
   hourCycle: "h23",
 });
 
+const fullDateAndTime = new Intl.DateTimeFormat("en-GB", {
+  timeZone: STUDIO_TIME_ZONE,
+  weekday: "short",
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+
 const zoneParts = new Intl.DateTimeFormat("en-US", {
   timeZone: STUDIO_TIME_ZONE,
   hourCycle: "h23",
@@ -78,4 +89,9 @@ export function formatAccraTime(value: Date | string): string {
 // "Fri 30 Oct, 08:12"
 export function formatAccraDayTime(value: Date | string): string {
   return dayAndTime.format(toDate(value));
+}
+
+// "Fri 30 Oct 2026, 08:12" (receipts)
+export function formatAccraDateTime(value: Date | string): string {
+  return fullDateAndTime.format(toDate(value));
 }

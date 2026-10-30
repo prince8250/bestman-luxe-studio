@@ -4,11 +4,11 @@ Update this file whenever the current phase, active feature, or implementation s
 
 ## Current Phase
 
-- Phase 1: POS access.
+- Phase 3: POS core (the counter).
 
 ## Current Goal
 
-- `08-new-sale.md`.
+- `10-sales-history-and-void.md`.
 
 ## Completed
 
@@ -26,6 +26,10 @@ Update this file whenever the current phase, active feature, or implementation s
 
 - **07 Studio settings and counter accounts**: `/pos/settings` (owner only): studio details (name, phone, WhatsApp, address, map link, opening hours per day, social links, about text), receipts (header, footer, copies, new-booking sound), counter controls (discount %, past-sale days, opening float, cash tolerance, big price change), owner alerts (phone, one toggle per alert kind, daily SMS limit), counter accounts (create with a generated temporary password, new password, sign out everywhere, deactivate/reactivate; the owner's own account is never listed or touched), and "Remove sample data" (shows what is left, keeps the service list unless asked, type REMOVE to confirm). Every settings change is logged by the trigger with only the changed fields; account changes write `audit_log` rows (`account_created`, `account_password_reset`, `account_signed_out_everywhere`, `account_deactivated`, `account_reactivated`) with no password. Migrations `20261030170000` (a POS user needs a live Auth session: `private.has_live_session` inside `pos_role` and `require_pos_user`; `end_user_sessions` for the service role; every policy now calls the helpers as `(select ...)` so they run once per query) and `20261030180000` (`sample_data_summary`). Login form: show/hide password button (developer request). Verified: settings save and reload (opening float GHS 250 and receipt footer, logged with old and new values), invalid values refused with the field named; a counter account created (confirmed email, counter profile, logged), deactivated (0 sessions left), reactivated, and given a new password; a separate live counter session read 19 services, and right after the owner pressed "Sign out everywhere" the same token read 0 and its refresh token was dead. The temporary account was deleted afterwards. Not verified by hand: a newly created counter account signing in through the login page (the same path as the test counter, which works). Checked at 1280, 768, and 375px.
 
+- **08 New sale**: `/pos/sale/new` (owner and counter). Service tiles by category with search (`/` focuses it, Enter adds the first match), a Custom item tile, and the ticket: per-line staff chips (staff assigned to the service first, then "Other staff"; preselected when only one person does the service), quantity, and a price dialog that needs a reason (quick reasons; for the counter the lowest allowed price is shown and bigger discounts are refused). Customer phone (optional) with a live lookup (`customer_lookup`, migration `20261030190000`: name, visits, last visit, blocked warning, never money); a new number asks for an optional name. Payment: Cash (quick amounts, change), MoMo/Card (optional reference), Split (rows must add up; Confirm stays disabled with the reason shown). CONFIRM & PRINT sends only ids, prices, quantities, and reasons to `confirmSaleAction` (Zod), which calls `create_sale` (re-reads prices, enforces the discount limit and reasons, records `created_by`, dedupes on `client_request_id`). A ref guard stops a second Confirm before the screen re-renders. Failure keeps the ticket with the message. The ticket is kept in `sessionStorage` per user id (`lib/sale/draft.ts`), restored after a refresh, cleared after a sale and on sign-out, and another account's draft is discarded unread. After-close banner when today is closed. Phone/tablet: a sticky total bar with a jump to the ticket (hidden while the ticket is on screen). Logic in `lib/sale/ticket.ts` (totals, problems, payload) with tests. Verified in the browser: the developer's own sales (Facial by MoMo, Weavon Styling cash with change, Makeup); a keyboard-only sale of three lines by two staff (Kofi, Kofi, Efua) paid cash GHS 100 + MoMo GHS 120, Enter pressed twice → exactly one sale (BLS-000214); split over the total refused on screen; a returning sample number recognised ("Kwesi Darko · 7 visits"); counter discount above the limit and a missing reason refused by `create_sale` (database tests). Checked at 1280, 768, and 375px as the owner. Not verified by hand: the screen signed in as the counter account (its limits are covered by the database tests and the price dialog's role check).
+
+- **09 Receipt printing**: `/pos/receipts/[saleId]` (outside the POS shell, so only the receipt prints) built from `receipt_data(sale_id)` (migration `20261030200000`): the stored sale, lines with staff names, payments, the counter account's name, studio settings, and the print count; same visibility as sales (owner any, counter today's only). `receipt_prints` records every print (`record_receipt_print`), so every print after the first is marked **REPRINT**. Copies from Settings (default 2): the customer's copy, then a **STAFF COPY** per staff member on the sale (at least copies − 1). After CONFIRM & PRINT the receipt loads in a hidden frame and opens the print dialog, so the counter stays on New sale; the success panel has Reprint and View receipt. Paper per device (cookie): **80mm roll** (each copy one page, exactly as tall as the receipt, so the printer cuts per copy and feeds no blank paper) or **A4** (copies side by side with dashed cut lines). Black and white, logo `public/brand/logo-receipt.png`, "Served by", "Served at the counter by", tendered and change, references, footer, socials, WhatsApp, "Book online at". Owner-guide notes in `docs/owner-guide-draft.md` (driver, default printer, paper size and cutter, Chrome `--kiosk-printing` shortcut, A4, the "no receipt, no service" rule). Verified: print output rendered through headless Chrome to PDF, 80mm (2 pages of 80 × 145mm, controls hidden) and A4 (one page, both copies, cut lines); the developer printed and reprinted BLS-000202 (REPRINT shown afterwards); a three-line sale printed 3 copies (customer, Kofi, Efua). The Claude app's built-in browser does not show Chrome's print preview; test printing in real Chrome. Checked at 1280, 768, and 375px.
+
 ## Development Database And Test Accounts
 
 - Development project: `bestman-luxe-studio` (ref `xpcsmqwdpswnvzyterwx`, eu-central-1, free plan). The CLI is linked (`npx supabase link --project-ref xpcsmqwdpswnvzyterwx`); `npm run db:push` applies new migrations.
@@ -39,7 +43,7 @@ Update this file whenever the current phase, active feature, or implementation s
 
 ## Next Up
 
-- `03-pos-login.md`, then `04-pos-shell.md`.
+- `10-sales-history-and-void.md` (its sale detail page links to the receipt for reprints), then `11-edit-sale-and-reassign-staff.md` (ask open question 10 first).
 
 ## Build Order
 
@@ -60,8 +64,8 @@ Specs live in `context/feature-specs/`. Build in order unless the developer says
 - [x] 07 Studio settings and counter accounts
 
 **Phase 3: POS core (the counter)**
-- [ ] 08 New sale
-- [ ] 09 Receipt printing
+- [x] 08 New sale
+- [x] 09 Receipt printing
 - [ ] 10 Sales history, voids, and void requests
 - [ ] 11 Reassign staff and edit a paid sale
 - [ ] 12 Record a past sale (outage fallback)
@@ -125,6 +129,9 @@ Specs live in `context/feature-specs/`. Build in order unless the developer says
 - **Dependencies**: the developer allowed adding dependencies as needed; each one is listed in the spec report (2026-10-30).
 - **Open questions are asked one by one** as their spec comes up (developer, 2026-10-30).
 - **GitHub repo stays public** (developer's choice, 2026-10-30), although `code-standards.md` says private. No secrets are committed; `.env.local` is gitignored.
+- **8 Receipt printer**: 80mm thermal (model not known yet), 2 copies by default (developer, 2026-10-30). Setup steps in `docs/owner-guide-draft.md`.
+- **9 Customer phone at the counter**: optional, encouraged (developer, 2026-10-30).
+- **12 Products**: sold occasionally, through the Custom item line (developer, 2026-10-30); stock stays in `later/` L6.
 - **Supabase**: new project `bestman-luxe-studio` (ref `xpcsmqwdpswnvzyterwx`, region Europe), the development database with sample data. "Automatically expose new tables" is off (migrations grant access explicitly) and automatic RLS is on. The other projects in the org (`luxe-studio`, `Maison`) are not used.
 
 ## Open Questions
@@ -136,11 +143,8 @@ Resolve each before the spec shown in brackets. Record the answer in the relevan
 5. **Counter employees** [07] Resolved for now: the owner creates one account per employee in POS Settings when ready (developer, 2026-10-30); one close per day, shift hand-overs not tracked in v1. Original question: How many people will use the counter PC, and their names (one counter account each). Is there a regular hand-over between shifts during the day? (Default: one close per day; shift hand-overs not tracked in v1.)
 6. **Counter limits** [07, 08, 12] Resolved: use the defaults below, editable in POS Settings (developer, 2026-10-30). Original question: Maximum counter discount (default 20%), counter backdate limit (default 3 days), opening cash float (default: owner sets), cash difference tolerance (default GHS 0.00), alert threshold for overrides.
 7. **Owner alerts** [19] Owner's phone number, which alerts by SMS (default: all on), daily SMS cap (default 20).
-8. **Receipt printer** [09] Model and paper width (default 80mm thermal). Copies per sale (default 2: customer + staff copy).
-9. **Customer phone at the counter** [08] Optional or required? (Default: optional, encouraged.)
 10. **Staff pay** [11, 16] Are staff paid per job or by percentage? If yes, `later/` L4 becomes important. (Default: v1 reports counts and revenue per staff only.)
 11. **Soft launch** [after 22] Start using the POS at the studio before the website is ready? (Default: yes; requires Supabase Pro and Vercel Pro from that point, see 13.)
-12. **Products** [08] Does the studio sell products at the counter? (Default: occasional, via custom item; stock in `later/` L6.)
 
 **Backups and hosting**
 13. **Hosting cost** [22, 38] Production needs Supabase Pro (about $25/month, daily backups, no pausing) and Vercel Pro (Hobby is non-commercial only). The client must agree to pay. Recheck prices before quoting.
@@ -184,6 +188,10 @@ Resolve each before the spec shown in brackets. Record the answer in the relevan
 - **Session check** (spec 07): signing someone out everywhere deletes their rows in `auth.sessions`, and every RLS rule and POS function also requires the token's session to still exist, so the lock-out is immediate (not after the access token expires).
 - **Second review (2026-10-30)**: the POS error page uses Next.js 16.4's stable `retry()` (not `unstable_retry`, which was the 16.2 name) so "Try again" refetches the server data; client components catch a failed request (dropped internet) and show a message instead of staying stuck on "Saving…" (catalog, quick prices, staff, settings, counter accounts, sample data).
 - **Review of 2026-10-30, not changed (with reasons)**: counter sale-detail without amounts (conflicts with the supported counter reprint; RLS already limits the counter to today); empty `SMS_MODE` in `.env.example` (an empty value fails the enum, the explicit `console` is correct); `--font-sans` to Geist (the project uses Inter); allowing `/pos` in robots.txt (spec 00 and the architecture require disallow; POS pages are also `noindex` and never linked); edits to `components/ui` (button default type, sheet scroll, tabs orientation) because generated shadcn files are never edited. Note: `components/ui/tabs.tsx` does not forward `orientation` to Radix, so vertical tabs need a wrapper; only horizontal tabs are used.
+
+- **Receipts print from a hidden frame** (spec 09): after a sale, `/pos/receipts/<id>?print=1` loads in an off-screen iframe that records the print and calls `window.print()`, so no pop-up is needed and the counter never leaves New sale. With Chrome's `--kiosk-printing` it prints silently.
+- **Print count in the database** (spec 09): `receipt_prints` decides REPRINT, not a URL flag, so an original cannot be printed twice by reopening a link. A sale with several staff gets one STAFF COPY per staff member, so each person's slips match their count in the day report.
+- **Receipt paper per device** (spec 09): a `pos_paper` cookie (80mm or A4), set by a server action. On 80mm the page height is measured from the receipt before printing.
 
 ## What Changed From Context Version 1
 

@@ -3,14 +3,14 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Ellipsis, LogOut, Plus } from "lucide-react";
+import { Ellipsis, Plus } from "lucide-react";
 
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import type { PosRole } from "@/lib/auth/types";
 import { bottomBarKeys, isActivePath, NEW_SALE_HREF, sidebarItems, type NavItem } from "@/lib/pos/navigation";
 import { cn } from "@/lib/utils";
 
-import { signOutAction } from "@/app/pos/login/actions";
+import { SignOutButton } from "./sign-out-button";
 
 const newSaleItem: NavItem = { key: "new-sale", label: "New sale", href: NEW_SALE_HREF, icon: Plus, permission: "sale.create" };
 
@@ -77,14 +77,9 @@ export function BottomBar({ role }: { role: PosRole }) {
               );
             })}
           </ul>
-          <form action={signOutAction} className="px-4">
-            <button
-              type="submit"
-              className="flex min-h-12 w-full items-center justify-center gap-2 rounded-[10px] border border-pos-border text-sm font-medium text-pos-text"
-            >
-              <LogOut className="h-5 w-5" /> Sign out
-            </button>
-          </form>
+          <div className="px-4">
+            <SignOutButton variant="full" />
+          </div>
         </SheetContent>
       </Sheet>
     </nav>
