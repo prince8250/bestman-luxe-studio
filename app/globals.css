@@ -1,0 +1,242 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+/*
+ * Two design systems share this file and nothing else.
+ * - `.site` (on <html> in app/(site)/layout.tsx): dark, photo-led website. Tokens --site-*.
+ * - `.pos`  (on <html> in app/pos/layout.tsx): light dashboard POS. Tokens --pos-*.
+ * The theme class sits on <html> so dialogs and popovers, which render into
+ * <body> through a portal, still get the right theme.
+ * Components use the Tailwind classes below (bg-site-bg, text-pos-text, ...),
+ * never raw hex values or Tailwind palette colors.
+ */
+
+@theme inline {
+  /* Fonts: next/font sets --font-display (Bebas Neue) and --font-text (Inter). */
+  --font-display: var(--font-display);
+  --font-text: var(--font-text);
+  --font-sans: var(--font-text);
+  --font-heading: var(--font-text);
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* Website */
+  --color-site-bg: var(--site-bg);
+  --color-site-surface: var(--site-surface);
+  --color-site-bar: var(--site-bar);
+  --color-site-button: var(--site-button);
+  --color-site-button-hover: var(--site-button-hover);
+  --color-site-paper: var(--site-paper);
+  --color-site-border: var(--site-border);
+  --color-site-border-button: var(--site-border-button);
+  --color-site-border-strong: var(--site-border-strong);
+  --color-site-text: var(--site-text);
+  --color-site-text-muted: var(--site-text-muted);
+  --color-site-text-paper: var(--site-text-paper);
+  --color-site-text-paper-muted: var(--site-text-paper-muted);
+  --color-site-error: var(--site-error);
+  --color-site-success: var(--site-success);
+  --color-site-overlay: var(--site-overlay);
+
+  /* POS */
+  --color-pos-bg: var(--pos-bg);
+  --color-pos-surface: var(--pos-surface);
+  --color-pos-subtle: var(--pos-subtle);
+  --color-pos-border: var(--pos-border);
+  --color-pos-text: var(--pos-text);
+  --color-pos-text-muted: var(--pos-text-muted);
+  --color-pos-accent: var(--pos-accent);
+  --color-pos-accent-hover: var(--pos-accent-hover);
+  --color-pos-accent-soft: var(--pos-accent-soft);
+  --color-pos-on-accent: var(--pos-on-accent);
+  --color-pos-up: var(--pos-up);
+  --color-pos-up-soft: var(--pos-up-soft);
+  --color-pos-down: var(--pos-down);
+  --color-pos-down-soft: var(--pos-down-soft);
+  --color-pos-warning: var(--pos-warning);
+  --color-pos-warning-soft: var(--pos-warning-soft);
+  --color-pos-chart-2: var(--pos-chart-2);
+  --color-pos-chart-3: var(--pos-chart-3);
+  --color-pos-chart-4: var(--pos-chart-4);
+
+  /* shadcn/ui variables, re-pointed per system below */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/* ---------- Website tokens (ui-context.md, "Site Color Tokens") ---------- */
+.site {
+  --site-bg: #000000;
+  --site-surface: #111111;
+  --site-bar: rgb(22 22 22 / 0.9);
+  --site-button: #1c1c1c;
+  --site-button-hover: #262626;
+  --site-paper: #f4f3f0;
+  --site-border: #3a3a3a;
+  --site-border-button: #5b5b5b;
+  --site-border-strong: #ffffff;
+  --site-text: #ffffff;
+  --site-text-muted: #a6a6a6;
+  --site-text-paper: #0b0b0b;
+  --site-text-paper-muted: #55555a;
+  --site-error: #e5484d;
+  --site-success: #3fb97a;
+  --site-overlay: rgb(0 0 0 / 0.45);
+
+  /* shadcn/ui on the website: dark, square, selection by inversion */
+  --background: var(--site-bg);
+  --foreground: var(--site-text);
+  --card: var(--site-surface);
+  --card-foreground: var(--site-text);
+  --popover: var(--site-surface);
+  --popover-foreground: var(--site-text);
+  --primary: var(--site-text);
+  --primary-foreground: var(--site-bg);
+  --secondary: var(--site-button);
+  --secondary-foreground: var(--site-text);
+  --muted: var(--site-surface);
+  --muted-foreground: var(--site-text-muted);
+  --accent: var(--site-button);
+  --accent-foreground: var(--site-text);
+  --destructive: var(--site-error);
+  --border: var(--site-border);
+  --input: var(--site-border-button);
+  --ring: var(--site-border-strong);
+  --chart-1: var(--site-text);
+  --chart-2: var(--site-text-muted);
+  --chart-3: var(--site-border-button);
+  --chart-4: var(--site-border);
+  --chart-5: var(--site-surface);
+  --radius: 0px;
+
+  color-scheme: dark;
+}
+
+/* ---------- POS tokens (ui-context.md, "POS Color Tokens") ---------- */
+.pos {
+  --pos-bg: #f4f5f7;
+  --pos-surface: #ffffff;
+  --pos-subtle: #eef0f3;
+  --pos-border: #e6e8ec;
+  --pos-text: #0f1115;
+  --pos-text-muted: #6b7280;
+  /* The accent is one variable: change --pos-accent* only to re-color the POS. */
+  --pos-accent: #2563eb;
+  --pos-accent-hover: #1d4ed8;
+  --pos-accent-soft: #e8f0fe;
+  --pos-on-accent: #ffffff;
+  --pos-up: #16a34a;
+  --pos-up-soft: #e7f7ed;
+  --pos-down: #dc2626;
+  --pos-down-soft: #fdecec;
+  --pos-warning: #d97706;
+  --pos-warning-soft: #fef3e2;
+  --pos-chart-2: #16a34a;
+  --pos-chart-3: #f97316;
+  --pos-chart-4: #8b5cf6;
+
+  /* shadcn/ui in the POS: light, 10px controls */
+  --background: var(--pos-bg);
+  --foreground: var(--pos-text);
+  --card: var(--pos-surface);
+  --card-foreground: var(--pos-text);
+  --popover: var(--pos-surface);
+  --popover-foreground: var(--pos-text);
+  --primary: var(--pos-accent);
+  --primary-foreground: var(--pos-on-accent);
+  --secondary: var(--pos-subtle);
+  --secondary-foreground: var(--pos-text);
+  --muted: var(--pos-subtle);
+  --muted-foreground: var(--pos-text-muted);
+  --accent: var(--pos-subtle);
+  --accent-foreground: var(--pos-text);
+  --destructive: var(--pos-down);
+  --border: var(--pos-border);
+  --input: var(--pos-border);
+  --ring: var(--pos-accent);
+  --chart-1: var(--pos-accent);
+  --chart-2: var(--pos-chart-2);
+  --chart-3: var(--pos-chart-3);
+  --chart-4: var(--pos-chart-4);
+  --chart-5: var(--pos-text-muted);
+  --radius: 10px;
+
+  color-scheme: light;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    @apply font-text;
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+}
+
+/* Bebas Neue is capitals-only with one weight: never bold it, never uppercase it. */
+@utility display-type {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  line-height: 0.95;
+}
+
+/* ---------- Website scroll reveal (components/brand-site/reveal.tsx) ---------- */
+/* Hidden only when scripts run, so the content is never lost without JavaScript. */
+@media (scripting: enabled) {
+  .site .reveal:not([data-revealed]) {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+}
+.site .reveal {
+  transition:
+    opacity 700ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 700ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition-delay: var(--reveal-delay, 0ms);
+}
+@media (prefers-reduced-motion: reduce) {
+  .site .reveal,
+  .site .reveal:not([data-revealed]) {
+    transform: none;
+    transition: opacity 500ms linear;
+  }
+}
+
+/* Paper section speckle: a very light dot pattern, drawn inline (no image request). */
+.site .paper-speckle {
+  background-color: var(--site-paper);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'%3E%3Cg fill='%230b0b0b' fill-opacity='0.07'%3E%3Ccircle cx='12' cy='18' r='0.9'/%3E%3Ccircle cx='47' cy='9' r='0.6'/%3E%3Ccircle cx='83' cy='31' r='1.1'/%3E%3Ccircle cx='121' cy='14' r='0.7'/%3E%3Ccircle cx='149' cy='42' r='0.9'/%3E%3Ccircle cx='28' cy='58' r='0.7'/%3E%3Ccircle cx='64' cy='77' r='1'/%3E%3Ccircle cx='102' cy='63' r='0.6'/%3E%3Ccircle cx='138' cy='88' r='0.8'/%3E%3Ccircle cx='9' cy='103' r='1'/%3E%3Ccircle cx='44' cy='121' r='0.7'/%3E%3Ccircle cx='79' cy='112' r='0.9'/%3E%3Ccircle cx='117' cy='131' r='0.6'/%3E%3Ccircle cx='153' cy='124' r='1'/%3E%3Ccircle cx='23' cy='147' r='0.8'/%3E%3Ccircle cx='96' cy='152' r='0.7'/%3E%3C/g%3E%3C/svg%3E");
+}
