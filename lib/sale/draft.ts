@@ -42,7 +42,8 @@ export function loadDraft(userId: string): Ticket | null {
   try {
     const stored = JSON.parse(raw) as StoredDraft;
     if (stored.userId !== userId || !stored.ticket?.requestId || !Array.isArray(stored.ticket.lines)) return null;
-    return stored.ticket;
+    // Drafts saved before "Record a past sale" existed have no past field.
+    return { ...stored.ticket, past: stored.ticket.past ?? null };
   } catch {
     store.removeItem(PREFIX + userId);
     return null;

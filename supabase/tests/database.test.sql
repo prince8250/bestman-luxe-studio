@@ -202,6 +202,33 @@ begin
   $q$, gen_random_uuid(), now() + interval '1 hour', format(v_items_ok, v_cut, v_kofi)));
   perform pg_temp.expect(v_message = 'future_time', 'a sale cannot be recorded in the future', v_message);
 
+  -- Record a past sale (spec 12): the owner may go 14 days back, the counter
+  -- only as far as Settings allows (3 here).
+  v_message := pg_temp.run_as(v_owner, format($q$
+    select public.create_sale('{"client_request_id": "%s", "paid_at": "%s", "items": %s,
+      "payments": [{"method": "cash", "amount": 10000}]}'::jsonb)
+  $q$, gen_random_uuid(), now() - interval '20 days', format(v_items_ok, v_cut, v_kofi)));
+  perform pg_temp.expect(v_message = 'backdate_limit', 'the owner cannot record a sale more than 14 days back', v_message);
+  v_message := pg_temp.run_as(v_owner, format($q$
+    select public.create_sale('{"client_request_id": "%s", "paid_at": "%s", "items": %s,
+      "payments": [{"method": "cash", "amount": 10000}]}'::jsonb)
+  $q$, gen_random_uuid(), now() - interval '10 days', format(v_items_ok, v_cut, v_kofi)));
+  perform pg_temp.expect(v_message = 'OK', 'the owner can record a sale 10 days back (beyond the counter''s limit)', v_message);
+
+  v_result := pg_temp.call_as(v_counter, format($q$
+    select public.create_sale('{"client_request_id": "%s", "paid_at": "%s", "items": %s,
+      "payments": [{"method": "cash", "amount": 10000}]}'::jsonb)
+  $q$, gen_random_uuid(), (((private.accra_today() - 1)::timestamp + interval '14 hours 30 minutes') at time zone 'Africa/Accra'), format(v_items_ok, v_cut, v_kofi)));
+  perform pg_temp.as_db_owner();
+  perform pg_temp.expect(
+    (select business_date = private.accra_today() - 1 and is_backdated and private.accra_date(recorded_at) = private.accra_today()
+       from public.sales where id = (v_result ->> 'sale_id')::uuid)
+    and exists (select 1 from public.audit_log where entity_id = (v_result ->> 'sale_id')::uuid and action = 'sale_backdated')
+    and (pg_temp.call_as(v_owner, format($q$ select public.search_sales('{"from": "%s", "to": "%s", "recorded_by": "%s", "limit": 100}'::jsonb) $q$,
+           private.accra_today() - 1, private.accra_today() - 1, v_counter)) -> 'rows')
+        @> jsonb_build_array(jsonb_build_object('id', v_result ->> 'sale_id', 'is_backdated', true)),
+    'a sale backdated to yesterday lands on yesterday, is flagged, is logged, and shows in yesterday''s sales', v_result::text);
+
   -- The database itself refuses unbalanced sales, even outside the functions.
   begin
     insert into public.sales (subtotal, discount_total, total, created_by, client_request_id)

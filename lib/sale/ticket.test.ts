@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   exceedsCounterDiscount,
   newTicket,
+  pastPaidAt,
+  pastSaleProblem,
   paymentRows,
   salePayload,
   ticketProblem,
@@ -103,5 +105,31 @@ describe("payments and payload", () => {
     expect(payload.clientRequestId).toBe("req-1");
     expect(payload.lines[1]).toMatchObject({ serviceId: null, itemName: "Hair oil", staffId: null, reason: "Product" });
     expect(payload.payments[0].amount).toBe(8500);
+  });
+});
+
+describe("record a past sale", () => {
+  const rules = { today: "2026-10-30", limitDays: 3, now: new Date("2026-10-30T12:00:00Z") };
+
+  it("turns the Accra date and time into the moment it happened", () => {
+    expect(pastPaidAt({ date: "2026-10-29", time: "14:30" })?.toISOString()).toBe("2026-10-29T14:30:00.000Z");
+    expect(pastPaidAt({ date: "2026-10-29", time: "25:00" })).toBeNull();
+  });
+
+  it("needs a date and time, never in the future, within the account's limit", () => {
+    expect(pastSaleProblem({ date: "2026-10-29", time: "" }, rules)).toMatch(/Enter the time/);
+    expect(pastSaleProblem({ date: "2026-10-30", time: "12:05" }, rules)).toMatch(/future/);
+    expect(pastSaleProblem({ date: "2026-10-26", time: "10:00" }, rules)).toMatch(/up to 3 days back/);
+    expect(pastSaleProblem({ date: "2026-10-27", time: "10:00" }, rules)).toBeNull();
+    expect(pastSaleProblem({ date: "2026-10-20", time: "10:00" }, { ...rules, limitDays: 14 })).toBeNull();
+  });
+
+  it("stops CONFIRM until the past sale is valid, and sends paid_at", () => {
+    const past = ticket({ past: { date: "2026-10-29", time: "" } });
+    expect(ticketProblem(past, "counter", 20, rules)).toMatch(/Enter the time/);
+    const ready = ticket({ past: { date: "2026-10-29", time: "09:15" } });
+    expect(ticketProblem(ready, "counter", 20, rules)).toBeNull();
+    expect(salePayload(ready).paidAt).toBe("2026-10-29T09:15:00.000Z");
+    expect(salePayload(ticket()).paidAt).toBeNull();
   });
 });

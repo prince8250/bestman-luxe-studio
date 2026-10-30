@@ -13,6 +13,8 @@ interface NewSaleScreenProps {
   userId: string;
   role: PosRole;
   maxCounterDiscountPercent: number;
+  /** How many days back this account may record a past sale. */
+  backdateDays: number;
   dayClosed: boolean;
 }
 

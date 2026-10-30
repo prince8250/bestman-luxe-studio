@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { AlertTriangle, CheckCircle2, PackagePlus, Printer, Search, UserRound } from "lucide-react";
+import { AlertTriangle, CheckCircle2, FileText, History, PackagePlus, Printer, Search, UserRound, X } from "lucide-react";
 
 import { PosButton } from "@/components/brand-pos/pos-button";
 import { posInputClass } from "@/components/pos/form-fields";
@@ -14,8 +14,16 @@ import { formatGhs } from "@/lib/money";
 import { normalizePhone } from "@/lib/phone";
 import type { SaleCatalog, SaleService } from "@/lib/sale/catalog";
 import { clearDraft, loadDraft, saveDraft } from "@/lib/sale/draft";
-import { newTicket, salePayload, ticketProblem, ticketTotals, type Ticket, type TicketLine as Line } from "@/lib/sale/ticket";
-import { formatAccraDayTime } from "@/lib/time";
+import {
+  newTicket,
+  salePayload,
+  ticketProblem,
+  ticketTotals,
+  type PastSale,
+  type Ticket,
+  type TicketLine as Line,
+} from "@/lib/sale/ticket";
+import { accraDate, addDays, formatAccraDayTime, formatBusinessDate } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
 import { confirmSaleAction, lookupCustomerAction, type ConfirmedSale, type CustomerMatch } from "@/app/pos/(app)/sale/new/actions";
@@ -30,6 +38,8 @@ interface NewSaleProps {
   userId: string;
   role: PosRole;
   maxCounterDiscountPercent: number;
+  /** How many days back this account may record a past sale (spec 12). */
+  backdateDays: number;
   dayClosed: boolean;
 }
 
@@ -38,7 +48,7 @@ type Lookup = { state: "idle" } | { state: "looking" } | { state: "done"; match:
 // The New sale screen (ui-context.md, "The New Sale Screen"): services on the
 // left, the ticket on the right, one dominant CONFIRM button. Built for speed
 // at the counter with a mouse and keyboard, and usable by touch.
-export function NewSale({ catalog, userId, role, maxCounterDiscountPercent, dayClosed }: NewSaleProps) {
+export function NewSale({ catalog, userId, role, maxCounterDiscountPercent, backdateDays, dayClosed }: NewSaleProps) {
   const [ticket, setTicket] = React.useState<Ticket>(() => loadDraft(userId) ?? newTicket(crypto.randomUUID()));
   const [category, setCategory] = React.useState<string>("all");
   const [query, setQuery] = React.useState("");
@@ -47,7 +57,7 @@ export function NewSale({ catalog, userId, role, maxCounterDiscountPercent, dayC
   const [lookup, setLookup] = React.useState<Lookup>({ state: "idle" });
   const [pending, setPending] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
-  const [done, setDone] = React.useState<(ConfirmedSale & { change: number | null }) | null>(null);
+  const [done, setDone] = React.useState<(ConfirmedSale & { change: number | null; pastAt: string | null }) | null>(null);
   // The receipt prints from a hidden frame, so the counter stays on this
   // screen, ready for the next customer. A new nonce prints again.
   const [printJob, setPrintJob] = React.useState<PrintJob | null>(null);
@@ -55,7 +65,8 @@ export function NewSale({ catalog, userId, role, maxCounterDiscountPercent, dayC
   const ticketRef = React.useRef<HTMLElement>(null);
 
   const totals = ticketTotals(ticket.lines);
-  const problem = ticketProblem(ticket, role, maxCounterDiscountPercent);
+  const today = accraDate();
+  const problem = ticketProblem(ticket, role, maxCounterDiscountPercent, { today, limitDays: backdateDays });
   const phoneValid = ticket.customerPhone.trim() === "" || normalizePhone(ticket.customerPhone) !== null;
   const canConfirm = !problem && phoneValid && !pending;
 
@@ -133,17 +144,21 @@ export function NewSale({ catalog, userId, role, maxCounterDiscountPercent, dayC
     setPending(true);
     setError(null);
     try {
-      const result = await confirmSaleAction(salePayload(ticket));
+      const payload = salePayload(ticket);
+      const result = await confirmSaleAction(payload);
       if (!result.ok) {
         // Keep the ticket on screen so nothing typed is lost.
         setError(result.error);
         return;
       }
       const change = ticket.paymentMode === "cash" && ticket.tendered !== null ? ticket.tendered - result.data.total : null;
-      setDone({ ...result.data, change });
-      setPrintJob(newPrintJob(result.data.saleId));
+      setDone({ ...result.data, change, pastAt: payload.paidAt });
+      // A sale written on paper is entered after the customer left: no
+      // automatic print (the success panel offers it).
+      if (!ticket.past) setPrintJob(newPrintJob(result.data.saleId));
       clearDraft(userId);
-      setTicket(newTicket(crypto.randomUUID()));
+      // Entering a stack of paper sales: keep the date, ask for each time.
+      setTicket(newTicket(crypto.randomUUID(), ticket.past ? { date: ticket.past.date, time: "" } : null));
       setLookup({ state: "idle" });
       setQuery("");
     } catch (error) {
@@ -183,7 +198,7 @@ export function NewSale({ catalog, userId, role, maxCounterDiscountPercent, dayC
 
   return (
     <main className="flex-1 p-3 md:p-6">
-      {dayClosed && (
+      {dayClosed && !ticket.past && (
         <p role="status" className="mb-3 flex items-center gap-2 rounded-[12px] bg-pos-warning-soft px-4 py-3 text-sm text-pos-warning">
           <AlertTriangle className="h-5 w-5 shrink-0" />
           Today is already closed. You can still sell; this sale is marked &quot;after close&quot; and the owner is told.
@@ -281,7 +296,8 @@ export function NewSale({ catalog, userId, role, maxCounterDiscountPercent, dayC
           {done && (
             <div role="status" className="mb-4 rounded-[12px] bg-pos-up-soft p-4 text-pos-up">
               <p className="flex items-center gap-2 font-medium">
-                <CheckCircle2 className="h-5 w-5" /> Sale {done.receiptNo} saved{done.existing ? " (already saved before)" : ""}
+                <CheckCircle2 className="h-5 w-5" /> {done.pastAt ? "Past sale" : "Sale"} {done.receiptNo} saved
+                {done.existing ? " (already saved before)" : ""}
               </p>
               <p className="mt-1 text-sm text-pos-text">
                 {formatGhs(done.total)}
@@ -291,6 +307,7 @@ export function NewSale({ catalog, userId, role, maxCounterDiscountPercent, dayC
                     <strong>Change {formatGhs(done.change)}</strong>
                   </>
                 )}
+                {done.pastAt && ` · recorded for ${formatAccraDayTime(done.pastAt)}`}
                 {done.afterClose && " · marked after close"}
               </p>
               <div className="mt-2 flex flex-wrap gap-2">
@@ -299,7 +316,7 @@ export function NewSale({ catalog, userId, role, maxCounterDiscountPercent, dayC
                   onClick={() => setPrintJob(newPrintJob(done.saleId))}
                   className="inline-flex min-h-11 items-center gap-1.5 rounded-[10px] bg-pos-surface px-3 text-sm font-medium text-pos-text hover:bg-pos-subtle focus-visible:outline-2 focus-visible:outline-pos-accent"
                 >
-                  <Printer className="h-4 w-4" /> Reprint
+                  <Printer className="h-4 w-4" /> {done.pastAt ? "Print receipt" : "Reprint"}
                 </button>
                 <Link
                   href={`/pos/receipts/${done.saleId}`}
@@ -310,6 +327,13 @@ export function NewSale({ catalog, userId, role, maxCounterDiscountPercent, dayC
               </div>
             </div>
           )}
+
+          <PastSalePanel
+            past={ticket.past}
+            today={today}
+            limitDays={backdateDays}
+            onChange={(past) => update((current) => ({ ...current, past }))}
+          />
 
           <div className="space-y-2">
             <label htmlFor="customer-phone" className="text-sm font-medium">
@@ -403,12 +427,12 @@ export function NewSale({ catalog, userId, role, maxCounterDiscountPercent, dayC
               <p className="text-sm text-pos-down">The phone number is not valid. Fix it or leave it empty.</p>
             )}
             <PosButton size="lg" fullWidth disabled={!canConfirm} onClick={confirm} className="min-h-14 text-base tracking-wide">
-              {pending ? "Saving…" : `CONFIRM & PRINT · ${formatGhs(totals.total)}`}
+              {pending ? "Saving…" : `${ticket.past ? "SAVE PAST SALE" : "CONFIRM & PRINT"} · ${formatGhs(totals.total)}`}
             </PosButton>
             {ticket.lines.length > 0 && (
               <button
                 type="button"
-                onClick={() => update(() => newTicket(crypto.randomUUID()))}
+                onClick={() => update((current) => newTicket(crypto.randomUUID(), current.past))}
                 className="min-h-11 w-full rounded-[10px] text-sm text-pos-text-muted hover:bg-pos-subtle"
               >
                 Clear ticket
@@ -470,5 +494,91 @@ export function NewSale({ catalog, userId, role, maxCounterDiscountPercent, dayC
         }}
       />
     </main>
+  );
+}
+
+// "Record a past sale" (spec 12): for sales written on paper while the
+// internet or power was down. The date and time are when it really happened
+// (Accra time); create_sale checks the same limits again.
+function PastSalePanel({
+  past,
+  today,
+  limitDays,
+  onChange,
+}: {
+  past: PastSale | null;
+  today: string;
+  limitDays: number;
+  onChange: (past: PastSale | null) => void;
+}) {
+  if (!past) {
+    return (
+      <div className="mb-4">
+        <button
+          type="button"
+          onClick={() => onChange({ date: today, time: "" })}
+          className="inline-flex min-h-11 items-center gap-1.5 rounded-[10px] px-2 text-sm font-medium text-pos-text-muted hover:bg-pos-subtle hover:text-pos-text focus-visible:outline-2 focus-visible:outline-pos-accent"
+        >
+          <History className="h-4 w-4" /> Record a past sale
+        </button>
+      </div>
+    );
+  }
+  const earliest = addDays(today, -limitDays);
+  return (
+    <section aria-label="Past sale" className="mb-4 space-y-3 rounded-[12px] border border-pos-warning/40 bg-pos-warning-soft p-3">
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <p className="font-medium text-pos-warning">Past sale (written on paper)</p>
+          <p className="text-xs text-pos-text-muted">
+            Enter when it really happened, from {formatBusinessDate(earliest)} to now. It is marked as a past sale and the owner is told.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => onChange(null)}
+          aria-label="Stop recording a past sale"
+          className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[10px] text-pos-text-muted hover:bg-pos-surface focus-visible:outline-2 focus-visible:outline-pos-accent"
+        >
+          <X className="h-5 w-5" />
+        </button>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-1">
+          <label htmlFor="past-date" className="text-xs font-medium">
+            Date
+          </label>
+          <Input
+            id="past-date"
+            type="date"
+            min={earliest}
+            max={today}
+            value={past.date}
+            onChange={(event) => onChange({ ...past, date: event.target.value })}
+            className={cn(posInputClass, "bg-pos-surface")}
+          />
+        </div>
+        <div className="space-y-1">
+          <label htmlFor="past-time" className="text-xs font-medium">
+            Time
+          </label>
+          <Input
+            id="past-time"
+            type="time"
+            value={past.time}
+            onChange={(event) => onChange({ ...past, time: event.target.value })}
+            className={cn(posInputClass, "bg-pos-surface")}
+          />
+        </div>
+      </div>
+      <a
+        href="/pos/paper-sheet"
+        target="_blank"
+        rel="noopener"
+        className="inline-flex min-h-11 items-center gap-1.5 rounded-[10px] text-sm font-medium text-pos-accent underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-pos-accent"
+      >
+        <FileText className="h-4 w-4" /> Print a blank paper sales sheet
+      </a>
+    </section>
   );
 }

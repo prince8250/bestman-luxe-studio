@@ -3,6 +3,8 @@
 // server re-reads every price and re-checks every rule in create_sale; these
 // helpers only give the counter fast, accurate feedback.
 
+import { accraDayStart, addDays } from "@/lib/time";
+
 export type PaymentMethod = "cash" | "momo" | "card" | "other";
 export type PaymentMode = "cash" | "momo" | "card" | "split";
 
@@ -30,6 +32,14 @@ export interface SplitPayment {
   reference: string;
 }
 
+/** "Record a past sale" (spec 12): when the sale really happened, Accra time. */
+export interface PastSale {
+  /** Business date, YYYY-MM-DD. */
+  date: string;
+  /** "HH:MM", 24-hour; empty until typed. */
+  time: string;
+}
+
 export interface Ticket {
   /** Sent with CONFIRM; a repeated CONFIRM with the same id returns the first sale. */
   requestId: string;
@@ -43,9 +53,11 @@ export interface Ticket {
   /** MoMo or card reference (single-method mode). */
   reference: string;
   split: SplitPayment[];
+  /** Set when entering a sale written on paper; null for a sale happening now. */
+  past: PastSale | null;
 }
 
-export function newTicket(requestId: string): Ticket {
+export function newTicket(requestId: string, past: PastSale | null = null): Ticket {
   return {
     requestId,
     customerPhone: "",
@@ -56,7 +68,39 @@ export function newTicket(requestId: string): Ticket {
     tendered: null,
     reference: "",
     split: [],
+    past,
   };
+}
+
+// The moment a past sale happened, from its Accra date and time.
+export function pastPaidAt(past: PastSale): Date | null {
+  const match = /^(\d{2}):(\d{2})$/.exec(past.time);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(past.date) || !match) return null;
+  const minutes = Number(match[1]) * 60 + Number(match[2]);
+  if (Number(match[1]) > 23 || Number(match[2]) > 59) return null;
+  return new Date(accraDayStart(past.date).getTime() + minutes * 60_000);
+}
+
+export interface PastSaleRules {
+  /** Today's business date. */
+  today: string;
+  /** How many days back this account may go (owner 14, counter from Settings). */
+  limitDays: number;
+  /** Defaults to the current time. */
+  now?: Date;
+}
+
+// Same rules as create_sale: never in the future, never beyond the limit.
+export function pastSaleProblem(past: PastSale, rules: PastSaleRules): string | null {
+  if (!past.date) return "Choose the date of the past sale.";
+  if (!past.time) return "Enter the time the sale happened.";
+  const paidAt = pastPaidAt(past);
+  if (!paidAt) return "Enter the time as HH:MM, for example 14:30.";
+  if (paidAt.getTime() > (rules.now ?? new Date()).getTime()) return "That time is in the future.";
+  if (past.date < addDays(rules.today, -rules.limitDays)) {
+    return `This account can record past sales up to ${rules.limitDays} days back.`;
+  }
+  return null;
 }
 
 // Same rule as the database (create_sale and recompute_sale_totals):
@@ -111,8 +155,17 @@ export function splitRemaining(ticket: Ticket, total: number): number {
 }
 
 // The first thing that stops CONFIRM, in plain words (null when ready).
-export function ticketProblem(ticket: Ticket, role: "owner" | "counter", maxCounterDiscountPercent: number): string | null {
+export function ticketProblem(
+  ticket: Ticket,
+  role: "owner" | "counter",
+  maxCounterDiscountPercent: number,
+  pastRules?: PastSaleRules,
+): string | null {
   if (ticket.lines.length === 0) return "Add a service to start.";
+  if (ticket.past && pastRules) {
+    const problem = pastSaleProblem(ticket.past, pastRules);
+    if (problem) return problem;
+  }
   for (const line of ticket.lines) {
     if (line.serviceId && !line.staffId) return `Choose who did ${line.name}.`;
     if (line.unitPrice !== line.listPrice && !line.reason?.trim()) return `Give a reason for the price of ${line.name}.`;
@@ -150,5 +203,7 @@ export function salePayload(ticket: Ticket) {
       reason: line.reason?.trim() || null,
     })),
     payments: paymentRows(ticket, total),
+    /** Only for "Record a past sale"; the server sets paid_at = now otherwise. */
+    paidAt: ticket.past ? (pastPaidAt(ticket.past)?.toISOString() ?? null) : null,
   };
 }

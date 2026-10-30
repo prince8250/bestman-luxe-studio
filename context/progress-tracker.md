@@ -8,7 +8,7 @@ Update this file whenever the current phase, active feature, or implementation s
 
 ## Current Goal
 
-- `12-record-past-sale.md` (open question 15, internet and power at the studio, needs no code).
+- `13-customers.md`.
 
 ## Completed
 
@@ -34,6 +34,8 @@ Update this file whenever the current phase, active feature, or implementation s
 
 - **11 Reassign staff and edit a paid sale**: on the sale page each line has **Change staff** (counter: today's sales only; owner: any sale) with staff chips and quick reasons ("Staff was busy", "Customer changed preference", "Entered wrong staff") → `reassign_sale_item_staff`, and **Edit** (owner only): service (grouped by category, the price follows the new service), price, quantity, reason quick picks; when the total changes the dialog shows "Collect GHS X" or "Refund GHS X" with the method and an optional reference, and sends exactly that difference → `edit_sale_item` (which refuses any other amount). The Sales list has a quick **Change staff** on today's paid sales (icon in the table, text on cards; a sale with several lines asks which one). A **Changed** badge marks edited lines and sales (owner: links to the change history). Migration `20261030220000`: `private.line_changed` / `private.sale_changed` (a reassignment, price change, or service change in `audit_log`), and `search_sales` / `sale_detail` return the flags plus the line and staff ids. Database tests (101): a counter reassignment moves the job to the new staff member in `search_sales` (and out of the old one's), marks the sale changed, keeps the total, and the history shows from, to, reason, and time; same-staff and voided-sale reassignments are refused (earlier tests: counter refused on older days and for any edit; an edit that changes the total needs the exact money difference). Component test: the Edit dialog sends the exact difference and needs a reason. Verified in the browser as the owner at 1280, 768, and 375px on test sale BLS-000214: Hair Washing Kofi → Kwame ("Staff was busy"), P-Cut GHS 60 → 70 with GHS 10 cash collected (total 220 → 230, "Extra paid by Cash"), Pedicure Efua → Ama from the list's quick action; the history lists each change. Not verified by hand: the counter's Change staff (same screens; the database tests cover the counter's limits). Staff reports (spec 16) will read `sale_items.staff_id`, so a reassignment moves the job and its revenue there too.
 
+- **12 Record a past sale**: New sale has **Record a past sale** (top of the ticket): a date (min = today − the account's limit, max = today) and a time; the ticket stays blocked until both are valid ("Enter the time the sale happened", "That time is in the future", "up to N days back"), and the button reads **SAVE PAST SALE**. The past date and time live on the ticket, so they survive a refresh with the draft (an older draft without them loads as a normal sale). `confirmSaleAction` sends `paid_at` (the Accra date and time as an instant); `create_sale` already refuses the future and the limit (owner 14 days, counter `counter_backdate_days`), sets `is_backdated`, writes `sale_backdated` to `audit_log` and a `backdated_sale` owner alert, and flags `after_close` when that day was closed. A past sale does not print automatically (the customer has left; the success panel offers Print receipt), and after saving the mode stays on with the same date and an empty time, for entering a stack of paper sales. The "Past sale" badge shows in the sales list and on the sale page (from spec 10); day reports are spec 14/16 and group by `paid_at`. `/pos/paper-sheet` (outside the shell, both roles): a blank A4 sheet with the studio name, date / written by / page, 22 rows (time, customer phone, service, staff, amount, payment with Cash · MoMo · Card to circle, and an "Entered" box) and cash / MoMo / card totals; linked from the past-sale panel. Owner guide: "When the internet or power is down", including open question 15 (backup MiFi and a small UPS, no code). Database tests (104): the owner cannot go beyond 14 days and can go 10 days (beyond the counter's 3); a counter sale backdated to yesterday 14:30 lands on yesterday, is flagged and logged, and shows in yesterday's `search_sales`. Unit tests for the past-sale rules and payload. Verified in the browser as the owner at 1280, 768, and 375px: a future time is refused on screen; Haircuts recorded for Thu 29 Oct 14:30 (BLS-000254) shows in "Yesterday" with "Past sale" and "After close" badges; the paper sheet printed through headless Chrome to one A4 page (controls hidden, every column header fits). Not verified by hand: the counter account's past-sale limit on screen (the database test covers it).
+
 ## Development Database And Test Accounts
 
 - Development project: `bestman-luxe-studio` (ref `xpcsmqwdpswnvzyterwx`, eu-central-1, free plan). The CLI is linked (`npx supabase link --project-ref xpcsmqwdpswnvzyterwx`); `npm run db:push` applies new migrations.
@@ -47,7 +49,7 @@ Update this file whenever the current phase, active feature, or implementation s
 
 ## Next Up
 
-- `12-record-past-sale.md`, then `13-customers.md`.
+- `13-customers.md`, then `14-report-engine.md` (Phase 4).
 
 ## Build Order
 
@@ -72,7 +74,7 @@ Specs live in `context/feature-specs/`. Build in order unless the developer says
 - [x] 09 Receipt printing
 - [x] 10 Sales history, voids, and void requests
 - [x] 11 Reassign staff and edit a paid sale
-- [ ] 12 Record a past sale (outage fallback)
+- [x] 12 Record a past sale (outage fallback)
 - [ ] 13 Customers
 
 **Phase 4: Reports, close day, and owner oversight**
@@ -135,6 +137,7 @@ Specs live in `context/feature-specs/`. Build in order unless the developer says
 - **GitHub repo stays public** (developer's choice, 2026-10-30), although `code-standards.md` says private. No secrets are committed; `.env.local` is gitignored.
 - **8 Receipt printer**: 80mm thermal (model not known yet), 2 copies by default (developer, 2026-10-30). Setup steps in `docs/owner-guide-draft.md`.
 - **9 Customer phone at the counter**: optional, encouraged (developer, 2026-10-30).
+- **15 Internet and power at the studio**: no code needed; the backup MiFi and small UPS recommendation is in `docs/owner-guide-draft.md` for the handover (spec 38).
 - **10 Staff pay**: not decided yet (developer, 2026-10-30). Default kept: v1 reports services done and revenue per staff member only; pay calculations stay in `later/` L4.
 - **12 Products**: sold occasionally, through the Custom item line (developer, 2026-10-30); stock stays in `later/` L6.
 - **Supabase**: new project `bestman-luxe-studio` (ref `xpcsmqwdpswnvzyterwx`, region Europe), the development database with sample data. "Automatically expose new tables" is off (migrations grant access explicitly) and automatic RLS is on. The other projects in the org (`luxe-studio`, `Maison`) are not used.
@@ -153,7 +156,6 @@ Resolve each before the spec shown in brackets. Record the answer in the relevan
 **Backups and hosting**
 13. **Hosting cost** [22, 38] Production needs Supabase Pro (about $25/month, daily backups, no pausing) and Vercel Pro (Hobby is non-commercial only). The client must agree to pay. Recheck prices before quoting.
 14. **Windows version and folder** [21] Windows 10 or 11? Backup folder (default `C:\BestmanBackups`), and can it sit inside a Google Drive or OneDrive desktop folder for an off-site copy?
-15. **Internet and power at the studio** [12] A backup MiFi and a small UPS for the PC, router, and printer are strongly recommended (no code needed).
 
 **Website and booking**
 16. **SMS provider** [18] Arkesel, mNotify, or Hubtel; account, API key, sender ID. Needed earlier now, because owner alerts (spec 19) use it.
@@ -194,6 +196,7 @@ Resolve each before the spec shown in brackets. Record the answer in the relevan
 - **Review of 2026-10-30, not changed (with reasons)**: counter sale-detail without amounts (conflicts with the supported counter reprint; RLS already limits the counter to today); empty `SMS_MODE` in `.env.example` (an empty value fails the enum, the explicit `console` is correct); `--font-sans` to Geist (the project uses Inter); allowing `/pos` in robots.txt (spec 00 and the architecture require disallow; POS pages are also `noindex` and never linked); edits to `components/ui` (button default type, sheet scroll, tabs orientation) because generated shadcn files are never edited. Note: `components/ui/tabs.tsx` does not forward `orientation` to Radix, so vertical tabs need a wrapper; only horizontal tabs are used.
 
 - **Third review (2026-10-30)**: a counter password reset or deactivation now reports when the account could not be signed out of its devices (the change and its audit row are still saved); Settings number fields refuse empty input instead of saving 0; opening-hours fields stop at 40 characters; every client request handler uses `lib/actions/request-error.ts`, which says "refresh the page" when a server action is unknown after a deploy (`unstable_isUnrecognizedActionError`) and keeps the connection message otherwise (applied to all forms, not only the three files named in the review).
+- **Fourth review (2026-10-30)**: Sign out everywhere stays available on deactivated counter accounts (the deactivation error tells the owner to press it); reactivating a counter account first ends any leftover sign-in and stays inactive if that fails; the sales date filters accept real calendar dates only (`isCalendarDate`), so an impossible date in a link falls back to today instead of failing in `search_sales`.
 - **Receipts print from a hidden frame** (spec 09): after a sale, `/pos/receipts/<id>?print=1` loads in an off-screen iframe that records the print and calls `window.print()`, so no pop-up is needed and the counter never leaves New sale. With Chrome's `--kiosk-printing` it prints silently.
 - **Print count in the database** (spec 09): `receipt_prints` decides REPRINT, not a URL flag, so an original cannot be printed twice by reopening a link. A sale with several staff gets one STAFF COPY per staff member, so each person's slips match their count in the day report.
 - **Sales list money for the counter** (spec 10): the counter's Sales list shows no amounts at all (not only no totals), matching the Today page in `ui-context.md`, so it cannot be summed into the expected cash before the blind count. The sale page still shows the amounts, because the counter reprints and checks those receipts.
