@@ -17,11 +17,12 @@ The secured endpoints the PC script and GitHub Actions call, plus manual downloa
 
 - Read `backup-and-recovery.md` fully.
 - `lib/backup/export.ts` (server-only): builds the full JSON snapshot of every business table, **paginating every table** past the 1000-row API limit, with `schema_version`, `generated_at`, and row counts.
-- `GET /api/backup/export` (bearer `BACKUP_EXPORT_TOKEN`): returns the snapshot gzip-compressed.
-- `GET /api/backup/day-report?date=YYYY-MM-DD&format=csv|html` (same token): reuses the spec 16 day report.
-- `POST /api/backup/heartbeat` (accepts either token): validates the body with Zod and writes a `backup_runs` row.
+- `GET /api/backup/export`: accepts **only** `BACKUP_EXPORT_TOKEN` (the studio PC); returns the snapshot gzip-compressed.
+- `GET /api/backup/day-report?date=YYYY-MM-DD&format=csv|html`: accepts **only** `BACKUP_EXPORT_TOKEN`; reuses the spec 16 day report.
+- `POST /api/backup/heartbeat`: accepts `BACKUP_EXPORT_TOKEN` (the PC script, `kind = daily_pc`) or `BACKUP_WEBHOOK_TOKEN` (GitHub Actions, `kind = weekly_cloud`); the token decides which `kind` may be written. Validates the body with Zod and writes a `backup_runs` row.
+- Tests: the export and day-report routes reject `BACKUP_WEBHOOK_TOKEN`, a POS session, and no token; the heartbeat rejects a `weekly_cloud` body sent with `BACKUP_EXPORT_TOKEN` and a `daily_pc` body sent with `BACKUP_WEBHOOK_TOKEN`.
 - POS: on `/pos/backups` (page body can stay minimal until spec 22), buttons **Download backup now** (owner session only, same JSON) and **Download day report**. Manual downloads write a `manual_download` row.
-- `tools/restore/import-json.ts`: imports a snapshot into an **empty test project** (after migrations), in dependency order, resetting sequences; refuses to run if `schema_version` differs or if the target URL matches production.
+- `tools/restore/import-json.ts`: imports a snapshot into an **empty test project** (after migrations), in dependency order, resetting sequences, recreating POS accounts with their original ids (see `backup-and-recovery.md`). It refuses to run if `schema_version` differs, and it identifies the target by its **project ref** (parsed from the Supabase URL, so `https://<ref>.supabase.co`, a trailing slash, upper case, or a path all resolve to the same ref): the ref must be listed in `RESTORE_ALLOWED_PROJECT_REFS` and must not equal `PRODUCTION_PROJECT_REF`. A missing allowlist, an unparseable URL, or an unknown ref aborts before anything is written.
 
 ## Out Of Scope
 

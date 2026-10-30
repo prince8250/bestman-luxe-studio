@@ -19,7 +19,7 @@ End every day with a blind cash count, so the owner knows the money in the drawe
   - Step 1: business date (today by default; an earlier unclosed day can be chosen), opening float (prefilled from settings; changing it needs a reason), **counted cash** (one big field), optional MoMo total as seen on the MoMo phone or statement, note. **The expected cash is not shown or sent to the browser before submitting.**
   - Step 2 (after `close_day`): counted, expected, difference (green for zero, red otherwise), sales count, totals by payment method, services per staff (to compare with the staff's STAFF COPY slips), and MoMo reported vs MoMo in the system.
 - Print a **close slip** (80mm) with the step 2 figures.
-- **Download the day report** (CSV and HTML from spec 16) through the browser automatically after closing, as an extra copy on the PC.
+- **Download the day report** (CSV and HTML from spec 16) through the browser automatically after closing, as an extra copy on the PC. The download action (permission `day.closeReport`, both roles) checks on the server that the date has an active close and reads `report_day_close_export` (spec 14). It is the only report a counter user can get, and only after the close.
 - Create `owner_alerts` rows: `day_summary` always, and `cash_difference` when the difference is beyond the tolerance (sent in spec 19).
 - Owner: see past closes, and **Reopen day** with a reason (logged); the day can then be closed again, and both closes stay in history.
 - Sidebar day status card for the counter ("Day open since 08:12" from the first sign-in or sale, or "Day closed at 20:41").

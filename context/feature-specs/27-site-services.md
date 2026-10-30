@@ -17,7 +17,7 @@ Show the service categories as photo panels on the home page, and the full menu 
 
 - Home: category panels as in `ui-context.md` (staggered pair on desktop, stacked on mobile), each with See More linking to `/services#category`.
 - `/services`: every active category and its services with `show_on_website`: photo, name, duration, price, and Book (to `/book?service=<id>`) for services that are `bookable_online`, otherwise "Walk in or call".
-- Data from the public views only, cached and revalidated when the owner saves a service.
+- Data from the public views only, cached and revalidated (on demand, from the saving server action) whenever the owner saves, archives, restores, or reorders a service **or a category**, so `/` and `/services` never wait on a time-based expiry to show catalog changes.
 
 ## Out Of Scope
 

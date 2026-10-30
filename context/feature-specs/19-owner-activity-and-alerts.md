@@ -22,6 +22,7 @@ Let the owner see what is happening at the counter from anywhere: a live activit
 - **Day summary SMS** when the day is closed: revenue, number of services, cash / MoMo / card, cash difference, voids, void requests pending.
 - **Owner job** `app/api/cron/owner-daily` (secured by `CRON_SECRET`, scheduled for 23:30 Accra with Vercel Cron): if the day had sales but was not closed, send `day_not_closed` with the summary; if the day had sales but no successful PC backup, send `backup_stale`.
 - Throttling: at most one SMS per alert kind per sale, and a daily cap (default 20) after which alerts stay in the feed only. Record `sms_status` on each `owner_alerts` row. An SMS failure never blocks the action that caused it.
+- **One alert per occurrence**: every alert has an `occurrence_key` (unique index, from spec 02): `<kind>:<sale id>` for sale alerts, `<kind>:<day close id>` for `day_summary` and `cash_difference`, and `<kind>:<YYYY-MM-DD>` (the Accra business date checked) for `day_not_closed` and `backup_stale`. The job claims the key by inserting the row with `on conflict do nothing` before it sends anything, and the sender only picks rows still `pending`, so a rerun job or a retry never creates or sends a duplicate.
 
 ## Out Of Scope
 
@@ -42,7 +43,7 @@ Let the owner see what is happening at the counter from anywhere: a live activit
 
 - [ ] Every listed event appears in the feed within a minute, with the account that did it.
 - [ ] The owner can approve a void request from a phone at 375px.
-- [ ] Each enabled alert sends exactly once; disabled alerts do not send; the daily cap holds.
+- [ ] Each enabled alert is sent at most once (never duplicated, even when the job runs twice); alerts beyond the daily cap are not sent and stay in the feed only; disabled alerts are not sent.
 - [ ] The 23:30 job sends `day_not_closed` and `backup_stale` only when their conditions are true (tested by calling the endpoint with seeded data).
 - [ ] A counter user cannot open the feed or call its actions.
 

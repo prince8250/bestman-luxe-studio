@@ -15,7 +15,7 @@ The owner adds, orders, and removes gallery pictures shown on the website.
 ## Scope (Build Only This)
 
 - Upload one or many images with browser-side resize and compression (long edge about 1600px, WebP or JPEG about 80% quality), progress, and errors.
-- Edit caption (also used as `alt` text), reorder (drag on desktop, up/down buttons on touch), show or hide, delete (removes the storage file and the row, after confirm).
+- Edit caption (also used as `alt` text), reorder (drag on desktop, up/down buttons on touch), show or hide, delete (after confirm). Delete order: (1) set the row inactive so the website stops showing it, (2) remove the storage file, (3) delete the row. Removing a file or row that is already gone counts as success, so a retry is always safe. If any step fails, the owner sees "Not fully deleted, try again" and the image stays hidden; "Deleted" is shown only after both the file and the row are gone.
 - Optional: import the starter photos from `context/studio-assets/photos/` through a one-off script, if the developer agrees.
 
 ## Out Of Scope

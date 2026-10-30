@@ -15,7 +15,7 @@ The rest of the home page.
 
 ## Scope (Build Only This)
 
-- Offers strip (only when an offer is active).
+- Offers strip (only when an offer is active and today's date in Africa/Accra is within its start and end dates, as defined in spec 24).
 - About on the paper background: interior photo, heading, the about text from settings, a button to `/book`.
 - Location and contact: address, opening hours, big Call button, Directions, map link, WhatsApp link (all from settings).
 - Footer: logo, quick links, socials, copyright.
@@ -36,7 +36,7 @@ The rest of the home page.
 
 ## Acceptance Criteria
 
-- [ ] Every detail comes from `studio_settings`.
+- [ ] Every location, contact, about, and social detail comes from `studio_settings`; offers come from the POS offers (spec 24).
 - [ ] The page reads well top to bottom at 375px and 1280px.
 
 ## When Done

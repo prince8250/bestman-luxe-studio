@@ -36,7 +36,7 @@ The first screen: logo, studio name, Book Now, Call, and Directions, with the lo
 ## Acceptance Criteria
 
 - [ ] Book, Call, and Directions are visible without scrolling at 360px.
-- [ ] Largest Contentful Paint stays fast on a throttled mobile profile (report the number).
+- [ ] Largest Contentful Paint is at most 2.5 s for `/` in a production build, measured with Lighthouse (Chrome DevTools) in mobile mode with the default "Slow 4G" network and 4x CPU throttling, cache disabled (cold load); report the number.
 - [ ] Reduced motion shows a simple fade.
 
 ## When Done

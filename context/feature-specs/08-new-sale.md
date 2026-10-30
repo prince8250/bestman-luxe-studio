@@ -25,7 +25,7 @@ The most important screen in the project: record a walk-in's services, the staff
 - If the business day is already closed (spec 17), the sale is still allowed, flagged `after_close`, with a notice on screen.
 - On success: open the receipt (spec 09) and reset the ticket. On failure: keep the ticket on screen with a clear message, so nothing typed is lost.
 - Keyboard shortcuts from `ui-context.md`.
-- The in-progress ticket survives an accidental page refresh (kept in `sessionStorage`; cleared after a successful sale).
+- The in-progress ticket survives an accidental page refresh (kept in `sessionStorage` under a key that includes the signed-in user's id, and stored together with that id; cleared after a successful sale). It is cleared on sign-out, and a ticket saved by a different account is discarded unread when another account signs in on the same PC, so one POS account can never see or submit another account's customer or sale data.
 
 ## Out Of Scope
 

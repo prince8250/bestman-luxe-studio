@@ -15,7 +15,7 @@ Show the customer their booking and send the confirmation SMS.
 
 ## Scope (Build Only This)
 
-- `/booking/[token]`: looked up by `public_token` only. Crest, BOOKING CONFIRMED, the code large, service, staff (or "First available: Kwame"), date and time, "Pay at the studio", address, Call, Directions, "Show this code at the studio". Unknown tokens show a neutral not-found page. `noindex`.
+- `/booking/[token]`: looked up by `public_token` only. Crest, BOOKING CONFIRMED, the code large, service, staff (or "First available: Kwame"), date and time, "Pay at the studio", address, Call, Directions, "Show this code at the studio". Unknown tokens show a neutral not-found page. `noindex`. The page is rendered per request and sent with `Cache-Control: private, no-store` (never statically generated or cached by Next.js, Vercel, or a CDN), because each response contains one customer's booking.
 - Send the confirmation SMS after the appointment is created, through `lib/sms`. Record `sms_status`. An SMS failure never fails the booking. No duplicate SMS on retry.
 
 ## Out Of Scope

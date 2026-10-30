@@ -11,7 +11,7 @@ Compute bookable online slots, as described in `architecture-context.md` "Online
 
 ## Scope (Build Only This)
 
-- `lib/availability`: pure functions that, given a service, optional staff, date range, working hours, time off, confirmed appointments, walk-in busy blocks, lead time (default 60 min), and slot interval (default 30 min), return slots with the staff who can take each one.
+- `lib/availability`: pure functions that, given a service, optional staff, date range, working hours, time off, confirmed appointments, walk-in busy blocks, lead time (default 60 min), slot interval (default 30 min), and an explicit `now` (a UTC instant passed in by the caller), return slots with the staff who can take each one. The functions never read the process clock; past-slot and lead-time checks use the given `now`, and weekdays, working hours, and dates are computed in `Africa/Accra` through the shared time helper.
 - "No preference" returns slots with the first free eligible staff member.
 - A server function that fetches the data and calls the pure logic.
 - Unit tests: back-to-back appointments, a service longer than a gap, time off, day off, past slots, lead time, a walk-in sale blocking a staff member, and "no preference".

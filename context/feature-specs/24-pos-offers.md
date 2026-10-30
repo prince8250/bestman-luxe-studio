@@ -14,8 +14,8 @@ The owner creates promotions shown on the website.
 
 ## Scope (Build Only This)
 
-- Offers list and form: title, description, image, optional linked service, start and end dates, active.
-- An offer is shown on the website only when active and within its dates (Accra time).
+- Offers list and form: title, description, image, optional linked service, start and end dates (date-only values, `starts_on` / `ends_on`, both optional), active.
+- An offer is shown on the website only when it is active and today's date in Africa/Accra is on or after `starts_on` (when set) and on or before `ends_on` (when set). The end date is inclusive: an offer ending on the 30th shows all day on the 30th.
 
 ## Out Of Scope
 

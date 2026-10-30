@@ -55,11 +55,13 @@ Within a day, each run **overwrites that day's files** with a fresher snapshot, 
 Each run: saves today's snapshot and today's day report (overwriting earlier ones from today), then checks the most recent previous business day and re-saves its day report if the stored one is older than that day's last change. Do not rely on a shutdown trigger; Windows does not give scheduled tasks enough time during shutdown to be reliable.
 
 **Close day adds a browser copy**: when the counter runs Close day, the POS also downloads that day's CSV and HTML day report through the browser into the PC's Downloads folder. That copy exists even if the scheduled task was never installed or is broken.
+- This is the **only** report a counter user can get, and only **after** the day is closed: the download action (permission `day.closeReport`) checks on the server that the requested business date has an active close, then calls the report function `report_day_close_export(business_date)`, which is callable by a counter user only for a date that is closed (and by the owner for any date). Before the close, the counter cannot load any report or expected figure, so the count stays blind. Every other report function stays owner-only.
 
 **Endpoint rules:**
 - The export reads with the service-role client in a server-only module.
 - Supabase's API returns at most 1000 rows per request by default, so the export **must paginate every table**. A test proves an export of a table with more than 1000 rows is complete.
 - Excluded: `rate_limits` (temporary), Supabase auth tables (not ours), storage files (images are recoverable from the owner's phone and are listed by path in the export).
+- Included for account recovery: a `pos_accounts` list with each POS user's auth id (the same as `profiles.id`), email, display name, role, and active flag. **Never** password hashes, tokens, or sessions.
 - The response is gzip-compressed and streams if large.
 - The token is long (at least 32 random bytes), stored as a server env var, compared in constant time, and never logged. If the token leaks, generate a new one, update the env var and the script config, and redeploy.
 
@@ -89,13 +91,14 @@ Three restore paths, all practiced against a **test** Supabase project, never pr
 
 1. **From a weekly dump**: create an empty project, run `pg_restore` with the dump. This restores schema, functions, data, everything.
 2. **From a daily PC JSON**: create a project, apply all migrations from `supabase/migrations`, then run `tools/restore/import-json.ts <file>` which inserts the rows in dependency order and resets sequences (for example `receipt_no`). The JSON's `schema_version` must match the migrations; the script refuses to run if it does not.
+   - **Accounts**: auth users are not in the JSON, but every history row points at them (`sales.created_by`, `voided_by`, `closed_by`, `audit_log.actor_id`). Before inserting `profiles`, the script recreates each entry of `pos_accounts` with the Supabase admin API **using the same user id** and a long random temporary password (never printed; the owner sets new passwords afterwards with the reset flow in spec 07). Because the ids are unchanged, every sale, void, close, and change stays attributed to the same person. If an account cannot be recreated, the script stops before inserting any business rows.
 3. **From Supabase Pro backups**: through the Supabase dashboard.
 
 After any restore: re-upload storage images if needed, point the app's env vars at the restored project, and check the totals of the last full day against that day's saved day report.
 
 ## Restore Drill
 
-- Before launch: restore one weekly dump **and** one daily JSON into a test project, compare row counts and one day's revenue with the day report. Record the result in the tracker. **Launch is blocked until this passes.**
+- Before launch: restore one weekly dump **and** one daily JSON into a test project, compare row counts and one day's revenue with the day report, and **sign in to the restored POS** as the owner and as a counter user (after setting new passwords), checking that a restored sale shows the right "recorded by" name. Record the result in the tracker. **Launch is blocked until this passes.**
 - After launch: repeat every 3 months, and after any big migration.
 
 A backup that has never been restored is a hope, not a backup.

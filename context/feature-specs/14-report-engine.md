@@ -22,10 +22,14 @@ One set of SQL report functions that every number in the POS comes from, so the 
   - `report_by_day` (for charts) and `report_by_weekday` (busiest days).
   - `report_repeat_customers`: identified customers in the period who also had a paid sale before the period, divided by identified customers in the period.
   - `report_voids`, `report_backdated`, and `report_after_close` for the period.
+  - `report_void_requests`: every void request created in the period with sale id and receipt number, status (`pending`, `approved`, `rejected`, `cancelled`), requested by and when, reason, decided (or cancelled) by and when, and decision note. Used by the daily report and the counter-user section in spec 16.
+  - `report_day_close_export(business_date)`: the day report used for the Close day browser download (spec 17). Callable by the owner for any date, and by a counter user **only** for a date that has an active close; it raises for any other date, so nothing is visible before the blind count.
   - `report_by_counter_user`: sales count, revenue, overrides, and void requests per counter account.
   - `report_day_close`: the `day_closes` row(s) for the period (expected, counted, difference).
   - `report_changes`: `audit_log` rows in the period.
 - `lib/reports` with typed TypeScript wrappers and a shared date-range helper (Today, This week Monday-start, This month, Last 30 days, Custom), all in `Africa/Accra`.
+
+Every report function above is owner-only, except `report_day_close_export` as described.
 
 ## Out Of Scope
 

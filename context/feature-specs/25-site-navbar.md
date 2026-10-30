@@ -15,7 +15,7 @@ The floating navigation bar with Book always reachable.
 ## Scope (Build Only This)
 
 - Floating centered bar as in `ui-context.md`, Bebas Neue links (Services, Gallery, About, Contact) that scroll to home sections, active section underline, and **Book** at the right (top right on mobile).
-- Mobile: logo left, Book right, a menu button opening a full-screen sheet with the links, Call, and Directions.
+- Mobile: logo left, Book right, a menu button opening a full-screen sheet with the links, Call, Directions, and a **Book** button, so booking stays one tap away while the sheet is open.
 - Becomes slightly more opaque after scrolling.
 
 ## Out Of Scope

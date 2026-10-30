@@ -17,7 +17,7 @@ Stop bots and fake bookings, since there is no login and no deposit.
 ## Scope (Build Only This)
 
 - Cloudflare Turnstile on the Confirm step, verified on the server before anything is written.
-- Rate limits in `rate_limits`: attempts per IP and per phone per hour (defaults documented in the tracker).
+- Rate limits in `rate_limits`: at most **10 booking attempts per IP** and **5 per phone number** per fixed one-hour window. The window starts on the hour (`window_start` = the attempt time truncated to the hour), the counter for a key resets when a new hour starts, and old rows are deleted after a day. Keys are hashed (`ip:<hash>`, `phone:<hash>`). The limits are constants in one file so they are easy to change.
 - Maximum 2 upcoming confirmed appointments per phone (default), with a friendly "please call the studio" message.
 - Blocked numbers (from spec 13) cannot book online.
 

@@ -15,7 +15,7 @@ The black-gutter photo mosaic on the home page and the full gallery with a viewe
 
 ## Scope (Build Only This)
 
-- Home: a mosaic of the latest active images (mostly tall tiles, since the studio's photos are portrait) with See More.
+- Home: a mosaic of the first active images in the owner's order (`gallery_images.sort_order`, then `created_at`), mostly tall tiles since the studio's photos are portrait, with See More. `/gallery` shows all active images in the same order.
 - `/gallery`: the full mosaic and a full-screen viewer (swipe on touch, arrows and Esc on desktop, clear close button).
 - Staggered reveal animation.
 

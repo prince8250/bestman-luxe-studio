@@ -61,9 +61,9 @@ All money is stored as **integer pesewas** (1 GHS = 100 pesewas). All timestamps
 | --- | --- |
 | `profiles` | **POS users only.** `id` (the Supabase auth user), `display_name` (for example "Abena (counter)"), `role` (`owner` or `counter`), `active`. Production: one owner, plus one counter account per employee who uses the PC |
 | `sign_in_events` | `profile_id`, `signed_in_at`, `user_agent`. Lets the owner see when the counter signed in (when the shop "opened") |
-| `void_requests` | `sale_id`, `requested_by`, `reason`, `status` (`pending`, `approved`, `rejected`), `decided_by`, `decided_at`, `decision_note`. At most one pending request per sale |
-| `day_closes` | `business_date` (unique), `opening_float`, `expected_cash`, `counted_cash`, `cash_difference`, `momo_reported` (optional), `expected_momo`, `expected_card`, `sales_count`, `note`, `closed_by`, `closed_at`, `reopened_by`, `reopened_at`, `reopen_reason` |
-| `owner_alerts` | `kind` (for example `void_requested`, `cash_difference`, `backdated_sale`, `large_override`, `day_summary`, `day_not_closed`, `backup_stale`), `payload` (jsonb), `sms_status`, `created_at`. The SMS log for the owner, also used for throttling |
+| `void_requests` | `sale_id`, `requested_by`, `reason`, `status` (`pending`, `approved`, `rejected`, `cancelled` when the requester withdraws it), `decided_by`, `decided_at`, `decision_note`. At most one pending request per sale |
+| `day_closes` | One row per close event: `business_date`, `opening_float`, `expected_cash`, `counted_cash`, `cash_difference`, `momo_reported` (optional), `expected_momo`, `expected_card`, `sales_count`, `note`, `closed_by`, `closed_at`, `reopened_by`, `reopened_at`, `reopen_reason`. A reopen marks the row (it is never overwritten or deleted) and a re-close inserts a new row, so every close stays in history. At most one **active** close (`reopened_at` is null) per `business_date` (partial unique index) |
+| `owner_alerts` | `kind` (for example `void_requested`, `cash_difference`, `backdated_sale`, `large_override`, `after_close_sale`, `day_summary`, `day_not_closed`, `backup_stale`), `sale_id`, `occurrence_key` (unique: `<kind>:<sale id>`, `<kind>:<day close id>`, or `<kind>:<YYYY-MM-DD>`, claimed atomically so one occurrence is queued and sent at most once), `payload` (jsonb), `sms_status`, `created_at`. The SMS log for the owner, also used for throttling |
 | `studio_settings` | Single row: studio name, phone, WhatsApp, address, map URL, opening hours text, social links, receipt header and footer text, receipt copies (default **2**: customer copy and staff copy), about text. Counter controls: `max_counter_discount_percent` (default 20), `counter_backdate_days` (default 3), `default_opening_float`, `cash_difference_tolerance` (default 0), owner alert phone, alert toggles, `override_alert_threshold`. Edited by the owner in POS Settings; read by the site and receipts |
 | `customers` | One row per phone: `phone` (E.164, unique), `full_name`, `blocked` (bool), `blocked_reason`, `notes`, `created_at`. Created automatically by sales and appointments |
 | `staff` | `name`, `title` (for example Barber, Nail Tech), `phone` (optional, internal), `photo_path`, `bio`, `show_on_website`, `bookable_online`, `active`, `archived_at`, `sort_order`. A record, never a login |
@@ -175,7 +175,7 @@ The overlap constraint is the source of truth for appointments. The availability
 | Edit a paid line's service or price | No (request a void and redo the sale) | Yes, reason required |
 | Void a sale | **Request** a void with a reason; the owner approves or rejects | Void directly, or decide requests |
 | Record a past sale | Up to `counter_backdate_days` back (default 3) | Up to 14 days back |
-| Close day (cash-up) | Yes (blind count) | Yes; can reopen a closed day with a reason |
+| Close day (cash-up) | Yes (blind count); after closing, that day's report only (CSV and HTML download, permission `day.closeReport`) | Yes; can reopen a closed day with a reason |
 | Today page (today's sales list and appointments, no money totals) | Yes | Yes |
 | Appointments: view, start sale, phone booking, cancel (reason), no-show | Yes | Yes |
 | Customers: search, view, edit name and notes | Yes | Yes |
