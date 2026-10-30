@@ -1291,6 +1291,7 @@ export type Database = {
         }
         Returns: Json
       }
+      end_user_sessions: { Args: { p_user_id: string }; Returns: number }
       mark_no_show: { Args: { p_appointment_id: string }; Returns: undefined }
       rate_limit_clear: { Args: { p_key: string }; Returns: undefined }
       rate_limit_count: {
@@ -1318,6 +1319,7 @@ export type Database = {
         Args: { p_reason: string; p_sale_id: string }
         Returns: string
       }
+      sample_data_summary: { Args: never; Returns: Json }
       save_service: { Args: { payload: Json }; Returns: string }
       update_service_prices: { Args: { changes: Json }; Returns: number }
       void_sale: {

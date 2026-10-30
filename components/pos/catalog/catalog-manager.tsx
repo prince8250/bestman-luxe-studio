@@ -64,11 +64,18 @@ export function CatalogManager({ services, categories, staff }: CatalogManagerPr
 
   async function run(action: () => Promise<ActionResult>, success: string) {
     setBusy(true);
-    const result = await action();
-    setBusy(false);
-    if (result.ok) toast.success(success);
-    else toast.error(result.error);
-    return result.ok;
+    try {
+      const result = await action();
+      if (result.ok) toast.success(success);
+      else toast.error(result.error);
+      return result.ok;
+    } catch {
+      // The request itself failed (for example the internet dropped).
+      toast.error("Could not reach the server. Check the internet connection and try again.");
+      return false;
+    } finally {
+      setBusy(false);
+    }
   }
 
   // Moves one row up or down and saves the whole list's order.

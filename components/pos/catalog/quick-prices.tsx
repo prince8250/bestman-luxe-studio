@@ -38,13 +38,18 @@ export function QuickPrices({ services, categories }: { services: ServiceRow[]; 
       return;
     }
     setPending(true);
-    const result = await updatePricesAction(changes.map((row) => ({ id: row.service.id, price: row.parsed as number })));
-    setPending(false);
-    if (!result.ok) {
-      setError(result.error);
-      return;
+    try {
+      const result = await updatePricesAction(changes.map((row) => ({ id: row.service.id, price: row.parsed as number })));
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      toast.success(`${result.data.changed} ${result.data.changed === 1 ? "price" : "prices"} saved`);
+    } catch {
+      setError("Could not reach the server. Check the internet connection and try again.");
+    } finally {
+      setPending(false);
     }
-    toast.success(`${result.data.changed} ${result.data.changed === 1 ? "price" : "prices"} saved`);
   }
 
   if (active.length === 0) {
