@@ -2,23 +2,12 @@ import { z } from "zod";
 
 import { normalizePhone } from "@/lib/phone";
 import { classifyFindQuery } from "@/lib/pos/find";
-import { addDays, startOfMonth, startOfWeek } from "@/lib/time";
+import { isCalendarDate, RANGE_PRESETS, rangeFor, type RangePreset } from "@/lib/reports/range";
 
 // Sales history (spec 10): the URL filters of /pos/sales, turned into the
 // filters public.search_sales understands, and the shapes it returns.
 
 export const PAGE_SIZE = 50;
-
-export const RANGE_PRESETS = ["today", "yesterday", "week", "month", "30d", "custom"] as const;
-export type RangePreset = (typeof RANGE_PRESETS)[number];
-export const RANGE_LABEL: Record<RangePreset, string> = {
-  today: "Today",
-  yesterday: "Yesterday",
-  week: "This week",
-  month: "This month",
-  "30d": "Last 30 days",
-  custom: "Custom dates",
-};
 
 export const METHODS = ["cash", "momo", "card", "other"] as const;
 export const METHOD_LABEL: Record<(typeof METHODS)[number], string> = { cash: "Cash", momo: "MoMo", card: "Card", other: "Other" };
@@ -59,15 +48,6 @@ export interface SalesQuery {
   dates: { from: string; to: string } | null;
 }
 
-// A real calendar date in YYYY-MM-DD form (2026-02-31 is refused, so a bad
-// link falls back to today instead of failing in the database).
-export function isCalendarDate(value: string): boolean {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-  if (!match) return false;
-  const [year, month, day] = match.slice(1).map(Number);
-  const date = new Date(Date.UTC(year, month - 1, day));
-  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
-}
 const uuid = z.uuid();
 
 function one(value: string | string[] | undefined): string {
@@ -89,25 +69,6 @@ export function parseSalesSearch(text: string): { receipt_no: string } | { phone
   return { error: "Type a receipt number (BLS-000123) or a phone number." };
 }
 
-export function datesFor(range: RangePreset, today: string, from: string, to: string): { from: string; to: string } {
-  switch (range) {
-    case "yesterday":
-      return { from: addDays(today, -1), to: addDays(today, -1) };
-    case "week":
-      return { from: startOfWeek(today), to: today };
-    case "month":
-      return { from: startOfMonth(today), to: today };
-    case "30d":
-      return { from: addDays(today, -29), to: today };
-    case "custom": {
-      const start = isCalendarDate(from) ? from : today;
-      const end = isCalendarDate(to) ? to : start;
-      return start <= end ? { from: start, to: end } : { from: end, to: start };
-    }
-    default:
-      return { from: today, to: today };
-  }
-}
 
 // Reads /pos/sales?range=week&staff=...&page=2 into the search_sales filters.
 // A receipt or phone search looks across all dates.
@@ -141,7 +102,7 @@ export function parseSalesQuery(params: Record<string, string | string[] | undef
     else Object.assign(filters, search);
   }
   if (!values.q || searchError) {
-    dates = datesFor(range, today, values.from, values.to);
+    dates = rangeFor(range, today, values.from, values.to);
     filters.from = dates.from;
     filters.to = dates.to;
   }

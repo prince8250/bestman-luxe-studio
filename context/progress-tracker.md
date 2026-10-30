@@ -8,7 +8,7 @@ Update this file whenever the current phase, active feature, or implementation s
 
 ## Current Goal
 
-- `14-report-engine.md`.
+- `15-pos-dashboard.md`.
 
 ## Completed
 
@@ -38,6 +38,8 @@ Update this file whenever the current phase, active feature, or implementation s
 
 - **13 Customers**: `/pos/customers` (both roles): search box (a full phone number in any common Ghana format is matched exactly as E.164; otherwise part of the name or part of the number, for example `000 0106`), most recent visit first, 50 per page, table from tablet width and cards on a phone, "Blocked online" badge. Customer page `/pos/customers/[id]`: name and phone, tiles for visits (paid sales only, since the first visit), last visit, total spent (owner only), favourite service, and usual staff; sales (voided ones listed and marked; a counter user can open only today's, older ones are plain text) and appointments with their status; edit name and notes (both roles; the phone is the identity and is not editable); owner **Block online booking** (reason required) / **Unblock**, with a red banner showing the reason and who blocked it when. Find: a phone number in any format opens the customer (or says no customer has it yet). Migration `20261030230000`: `search_customers(query, phone, limit, offset)` and `customer_detail(id)`, security definer, money for the owner only; name and notes updates go through the existing RLS, column grants, and `customers_guard` trigger, and blocks are logged by the existing `customers_audit` trigger. Database tests (110): two paid sales and one voided for one number give 2 visits and the right total (voided listed, not counted), favourite service and usual staff, the counter sees no money, search by `020 999 9050`, `233209999050`, part of the number, or part of the name, visitors refused, a block shows with who blocked it, the counter edits name and notes. Verified in the browser as the owner at 1280, 768, and 375px: Find "+233 20 000 0106" opened Kwesi Darko (6 visits and GHS 350.00, matching the sales table; his voided BLS-000143 listed and not counted); every phone format and "kwesi" found him; blocking needed a reason, showed the banner, and wrote `customer_blocked` with the reason to `audit_log`; unblocked again; a notes edit saved (sample note restored afterwards). Not verified by hand: the customer pages signed in as the counter (the database tests cover what the counter gets).
 
+- **14 Report engine**: migration `20261030240000`. Private builders `private.r_*` (never granted) compute each report; public `report_*` wrappers check owner-only and a sane range (start on or before end, at most two years) through `private.report_guard`, then return the builder's jsonb: `report_summary` (revenue, sales, services done, customers served = distinct identified customers + walk-ins without a phone, average sale, discounts, and the same for the previous period of equal length), `report_by_payment_method` (adjustments included, so methods add up to revenue), `report_by_service` (current name and category; custom items apart), `report_by_category`, `report_by_channel` (every channel, zeros included), `report_by_staff` (service lines only: services, revenue, average per service, top service; a reassigned line counts for whoever it is assigned to now), `report_by_day` (every day, zeros included), `report_by_weekday` (Monday-Sunday with how many of each day the range has), `report_repeat_customers`, `report_voids` / `report_backdated` (sold in the period, or voided / entered during it, flagged), `report_after_close`, `report_void_requests`, `report_by_counter_user` (every counter account with zeros, the owner when they rang sales), `report_day_close` (reopened closes marked), `report_changes` (audit_log, newest first, limit 500 by default), and `report_day_close_export(date)` (the day report; owner any day, counter only for a day with an active close, else `not_closed`), all built from the same builders. Revenue is paid sales by `business_date` (the Accra date of `paid_at`), so a backdated sale lands on its real day. `lib/reports/range.ts`: the shared date-range helper (Today, Yesterday, This week from Monday, This month, Last 30 days, Custom; `previousRange`, `rangeDays`, `isCalendarDate`); the Sales page now uses it. `lib/reports/reports.ts` (server-only): one typed wrapper per report with a Zod schema, `ReportError`, and `percentChange`. Database tests (131): a sample week (3-9 Jan 2000) with a hand calculation written in the test: revenue 395.00 over 5 sales, 6 services, 3 customers served, average 79.00, cash 280 / MoMo 80 / card 35, Kwame 4 services and 220.00 after the reassignment, Kofi 2 and 140.00, repeat rate 0.5, previous week 140.00; day, week (a 00:00:30 Monday sale is next week's), and month (January 2000 against December 1999) boundaries; voided sale excluded everywhere; the counter refused on every report and on a day report before the close; the private builders cannot be called. Also checked: all 17 report outputs captured from the dev database (last 30 days, as the test owner, in a throwaway session) parse with the TypeScript schemas, and on that real data revenue equals the payment methods and the day-by-day total, and services done match across summary, services, and staff.
+
 ## Development Database And Test Accounts
 
 - Development project: `bestman-luxe-studio` (ref `xpcsmqwdpswnvzyterwx`, eu-central-1, free plan). The CLI is linked (`npx supabase link --project-ref xpcsmqwdpswnvzyterwx`); `npm run db:push` applies new migrations.
@@ -51,7 +53,7 @@ Update this file whenever the current phase, active feature, or implementation s
 
 ## Next Up
 
-- `14-report-engine.md`, then `15-pos-dashboard.md`.
+- `15-pos-dashboard.md`, then `16-pos-reports.md`.
 
 ## Build Order
 
@@ -80,7 +82,7 @@ Specs live in `context/feature-specs/`. Build in order unless the developer says
 - [x] 13 Customers
 
 **Phase 4: Reports, close day, and owner oversight**
-- [ ] 14 Report engine (SQL)
+- [x] 14 Report engine (SQL)
 - [ ] 15 Dashboard
 - [ ] 16 Reports: day, week, month, staff, changes
 - [ ] 17 Close day (blind cash-up)

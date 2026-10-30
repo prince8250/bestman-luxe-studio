@@ -10,12 +10,11 @@ import {
   CHANNELS,
   METHOD_LABEL,
   METHODS,
-  RANGE_LABEL,
-  RANGE_PRESETS,
   STATUS_LABEL,
   STATUSES,
   type SalesFilterValues,
 } from "@/lib/sales/history";
+import { RANGE_LABEL, RANGE_PRESETS } from "@/lib/reports/range";
 import { cn } from "@/lib/utils";
 
 interface SalesFiltersProps {

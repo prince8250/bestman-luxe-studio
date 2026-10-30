@@ -1,24 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import { describeHistory } from "./describe";
-import { datesFor, isCalendarDate, parseSalesQuery, parseSalesSearch, salesHref } from "./history";
+import { parseSalesQuery, parseSalesSearch, salesHref } from "./history";
 
 const today = "2026-10-30"; // a Friday
-
-describe("datesFor", () => {
-  it("turns presets into business dates (weeks start on Monday)", () => {
-    expect(datesFor("today", today, "", "")).toEqual({ from: today, to: today });
-    expect(datesFor("yesterday", today, "", "")).toEqual({ from: "2026-10-29", to: "2026-10-29" });
-    expect(datesFor("week", today, "", "")).toEqual({ from: "2026-10-26", to: today });
-    expect(datesFor("month", today, "", "")).toEqual({ from: "2026-10-01", to: today });
-    expect(datesFor("30d", today, "", "")).toEqual({ from: "2026-10-01", to: today });
-  });
-
-  it("orders custom dates and fills a missing end", () => {
-    expect(datesFor("custom", today, "2026-10-20", "2026-10-10")).toEqual({ from: "2026-10-10", to: "2026-10-20" });
-    expect(datesFor("custom", today, "2026-10-20", "")).toEqual({ from: "2026-10-20", to: "2026-10-20" });
-  });
-});
 
 describe("parseSalesSearch", () => {
   it("reads receipt numbers in any common form", () => {
@@ -95,15 +80,7 @@ describe("describeHistory", () => {
   });
 });
 
-describe("isCalendarDate", () => {
-  it("accepts real dates only", () => {
-    expect(isCalendarDate("2028-02-29")).toBe(true);
-    expect(isCalendarDate("2026-02-29")).toBe(false);
-    expect(isCalendarDate("2026-02-31")).toBe(false);
-    expect(isCalendarDate("2026-13-01")).toBe(false);
-    expect(isCalendarDate("2026-1-01")).toBe(false);
-  });
-
+describe("parseSalesQuery dates", () => {
   it("treats an impossible date in the link as empty, so the range falls back to today", () => {
     const query = parseSalesQuery({ range: "custom", from: "2026-02-31", to: "2026-13-40" }, today);
     expect(query.values.from).toBe("");
