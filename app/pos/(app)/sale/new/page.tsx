@@ -1,8 +1,15 @@
-// Placeholder: the New sale screen is spec 08. The counter lands here after signing in.
+import type { Metadata } from "next";
+
+import { PlaceholderPage } from "@/components/pos/placeholder-page";
+
+export const metadata: Metadata = { title: "New sale" };
+
 export default function NewSalePage() {
   return (
-    <main className="flex flex-1 items-center justify-center p-8">
-      <h1 className="display-type text-4xl">New sale</h1>
-    </main>
+    <PlaceholderPage
+      title="New sale"
+      permission="sale.create"
+      description="Pick services and staff, take payment, and print the receipt (spec 08)."
+    />
   );
 }

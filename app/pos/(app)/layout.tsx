@@ -1,33 +1,27 @@
-import { redirect } from "next/navigation";
-import { LogOut } from "lucide-react";
+import { cookies } from "next/headers";
 
-import { PosButton } from "@/components/brand-pos/pos-button";
-import { getPosUser } from "@/lib/auth/pos-user";
+import { BottomBar } from "@/components/pos/shell/bottom-bar";
+import { Sidebar } from "@/components/pos/shell/sidebar";
+import { StatusCard } from "@/components/pos/shell/status-card";
+import { TopBar } from "@/components/pos/shell/top-bar";
+import { requirePosUser } from "@/lib/auth/require-pos-user";
 
-import { signOutAction } from "../login/actions";
-
-// Every page in this group needs an active POS user, checked on the server.
-// TEMPORARY top bar (spec 03): spec 04 replaces it with the full POS shell.
+// Every page in this group needs an active POS user, checked here on the
+// server (anyone else goes to /pos/login and receives no POS data). Each page
+// then checks its own permission (pageAccess / requirePermission).
 export default async function PosAppLayout({ children }: LayoutProps<"/pos">) {
-  const user = await getPosUser();
-  if (!user) redirect("/pos/login");
+  const user = await requirePosUser();
+  const sidebarCollapsed = (await cookies()).get("pos_sidebar")?.value === "collapsed";
 
   return (
-    <div className="flex flex-1 flex-col">
-      <header className="flex items-center justify-between gap-3 border-b border-pos-border bg-pos-surface px-4 py-2">
-        <span className="display-type text-2xl">Bestman POS</span>
-        <div className="flex items-center gap-3">
-          <span className="text-sm">
-            {user.displayName} · <span className="text-pos-text-muted capitalize">{user.role}</span>
-          </span>
-          <form action={signOutAction}>
-            <PosButton type="submit" variant="secondary">
-              <LogOut /> Sign out
-            </PosButton>
-          </form>
-        </div>
-      </header>
-      {children}
+    <div className="flex min-h-dvh flex-1">
+      <Sidebar role={user.role} initialCollapsed={sidebarCollapsed} statusCard={<StatusCard user={user} />} />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <TopBar user={user} />
+        {/* Room for the phone bottom bar. */}
+        <div className="flex flex-1 flex-col pb-20 md:pb-0">{children}</div>
+      </div>
+      <BottomBar role={user.role} />
     </div>
   );
 }

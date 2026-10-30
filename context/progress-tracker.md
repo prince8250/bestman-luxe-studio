@@ -8,7 +8,7 @@ Update this file whenever the current phase, active feature, or implementation s
 
 ## Current Goal
 
-- `04-pos-shell.md`.
+- `05-pos-staff.md`.
 
 ## Completed
 
@@ -17,6 +17,8 @@ Update this file whenever the current phase, active feature, or implementation s
 - **02 Database schema, functions, RLS, seed**: 7 migrations in `supabase/migrations` (all 22 tables, check constraints, `btree_gist` overlap constraint, receipt sequence, booking codes and tokens, append-only `audit_log`, never-delete guards on money tables, a deferred check that every sale's lines and payments equal its total, RLS on every table with explicit grants, column grants that hide staff phones and internal settings from visitors, `public_staff` / `public_studio_settings` views, storage buckets and policies). Functions: `create_sale`, `reassign_sale_item_staff`, `edit_sale_item`, `void_sale`, `request_void`, `cancel_void_request`, `decide_void_request`, `close_day`, `reopen_day`, `create_appointment`, `cancel_appointment`, `mark_no_show`, `remove_sample_data`. Applied to the development project; types in `lib/database.types.ts` (`npm run db:types`); clients in `lib/supabase/{client,server,admin}.ts` (admin is `server-only`). 58 SQL tests in `supabase/tests/database.test.sql` pass on the hosted project (`npm run test:db`, always rolled back) and offline in PGlite (`npm run test:db:local`, also part of `npm run test`). Public sign-ups **disabled** in Supabase Auth (verified: the sign-up API returns `signup_disabled`).
 
 - **03 POS login**: `/pos/login` (email + password, Supabase Auth through a server action), session refresh and signed-out redirect in `proxy.ts`, `getPosUser()` data access layer (`lib/auth/pos-user.ts`, active profile required), `sign_in_events` row on every sign-in (the sign-in is refused if it cannot be recorded), one generic error for every failure, failed attempts slowed after 3 and locked after 10 per email and per IP in 15-minute windows (`rate_limit_*` functions, migration `20261030130000`). Owner lands on `/pos`, counter on `/pos/sale/new`. Route groups: `app/pos/login` (public) and `app/pos/(app)` (signed-in; temporary top bar until spec 04). Verified in the browser by the developer: wrong password gives the generic error, owner and counter sign in to their home pages, a deactivated counter is refused, sign-out returns to the login page; `sign_in_events` rows checked in the database. Public sign-up stays disabled (spec 02).
+
+- **04 POS shell, permissions, Find**: `lib/auth/permissions.ts` (one entry per row of the architecture Permissions table, covered by a test), `requirePosUser` / `requirePermission` / `pageAccess` (`lib/auth/require-pos-user.ts`), `runPosAction` and the `ActionResult` shape (`lib/actions/result.ts`) so owner-only actions refuse a counter user before running. Shell in `app/pos/(app)/layout.tsx`: sidebar (240px, collapsible to icons on desktop with the choice kept in a cookie, icon rail on tablet), top bar with Find (`Ctrl+K`) and the signed-in name and role, phone bottom bar with "More" sheet, owner backup-status card and counter day-status card. Placeholder pages for every POS route with the permission check in place; owner-only pages show "This page is for the owner" to counter users. `/pos/find` classifies receipt numbers, booking codes, and phones (lookups wired in specs 10, 13, 36). `lib/time.ts` is the shared Africa/Accra helper. Checked in the browser as counter and owner at 1280, 768, and 375px.
 
 ## Development Database And Test Accounts
 
@@ -44,7 +46,7 @@ Specs live in `context/feature-specs/`. Build in order unless the developer says
 
 **Phase 1: POS access**
 - [x] 03 POS login (owner and counter accounts)
-- [ ] 04 POS shell, permissions, and Find
+- [x] 04 POS shell, permissions, and Find
 
 **Phase 2: POS catalog and settings**
 - [ ] 05 Staff management
@@ -171,6 +173,7 @@ Resolve each before the spec shown in brackets. Record the answer in the relevan
 - **Database tests without Docker** (spec 02): SQL tests run on the development project through `supabase db query --linked`, one transaction per file that always ends in a deliberate error (so everything rolls back), and offline in PGlite with a small stand-in for Supabase's `auth` and `storage` schemas.
 - **Deferred balance check** (spec 02): a constraint trigger refuses, at commit, any sale whose lines or payments do not add up to its total, whatever code path wrote it.
 - **Counter sales visibility** (spec 02): RLS lets a counter user read sales of the current business day (and past sales recorded today) only. Per-sale amounts stay visible to them because they ring up and reprint those receipts; money aggregates are owner-only.
+- **Owner-only pages** (spec 04): Next.js `forbidden()` needs the experimental `authInterrupts` flag and a single root layout, so pages use `pageAccess(action)` and render `<OwnerOnly />` before loading data; server actions use `runPosAction(action, ...)`, which throws on a refused role before the action body runs.
 - **Owner alert occurrence keys** (review, 2026-10-30): `owner_alerts.occurrence_key` is unique, so a retried job or a re-close cannot queue or send the same alert twice.
 - **Review of 2026-10-30, not changed (with reasons)**: counter sale-detail without amounts (conflicts with the supported counter reprint; RLS already limits the counter to today); empty `SMS_MODE` in `.env.example` (an empty value fails the enum, the explicit `console` is correct); `--font-sans` to Geist (the project uses Inter); allowing `/pos` in robots.txt (spec 00 and the architecture require disallow; POS pages are also `noindex` and never linked); edits to `components/ui` (button default type, sheet scroll, tabs orientation) because generated shadcn files are never edited. Note: `components/ui/tabs.tsx` does not forward `orientation` to Radix, so vertical tabs need a wrapper; only horizontal tabs are used.
 

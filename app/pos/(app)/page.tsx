@@ -1,8 +1,15 @@
-// Placeholder: the owner's Dashboard is spec 15. The owner lands here after signing in.
-export default function PosDashboardPage() {
+import type { Metadata } from "next";
+
+import { PlaceholderPage } from "@/components/pos/placeholder-page";
+
+export const metadata: Metadata = { title: "Dashboard" };
+
+export default function DashboardPage() {
   return (
-    <main className="flex flex-1 items-center justify-center p-8">
-      <h1 className="display-type text-4xl">Dashboard</h1>
-    </main>
+    <PlaceholderPage
+      title="Dashboard"
+      permission="dashboard.view"
+      description="Revenue, services done, customers, bookings, and charts for any period (spec 15)."
+    />
   );
 }
