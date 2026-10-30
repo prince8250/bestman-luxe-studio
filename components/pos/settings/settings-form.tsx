@@ -9,6 +9,7 @@ import { Field, FormError, posInputClass, ToggleRow } from "@/components/pos/for
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { ALERT_KINDS, settingsInputSchema, SOCIAL_NETWORKS, type AlertKind } from "@/lib/settings/schema";
+import { requestErrorMessage } from "@/lib/actions/request-error";
 
 import { saveSettingsAction } from "@/app/pos/(app)/settings/actions";
 
@@ -75,8 +76,8 @@ export function SettingsForm({ initial }: { initial: SettingsFormValues }) {
         return;
       }
       toast.success("Settings saved");
-    } catch {
-      setFormError("Could not reach the server. Check the internet connection and try again.");
+    } catch (error) {
+      setFormError(requestErrorMessage(error));
     } finally {
       setPending(false);
     }
@@ -117,6 +118,7 @@ export function SettingsForm({ initial }: { initial: SettingsFormValues }) {
                 <span className="w-24 shrink-0 text-sm">{row.day}</span>
                 <Input
                   value={row.hours}
+                  maxLength={40}
                   placeholder="Closed"
                   onChange={(event) =>
                     set(

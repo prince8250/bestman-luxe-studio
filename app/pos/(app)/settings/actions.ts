@@ -140,9 +140,12 @@ export async function resetCounterPasswordAction(input: unknown): Promise<Action
       console.error("password reset failed", error.message);
       return fail("Could not change the password. Try again.");
     }
-    await endSessions(account.id);
+    const signedOut = await endSessions(account.id);
     await logAccountChange(owner, account.id, "account_password_reset", { display_name: account.display_name });
     revalidatePath("/pos/settings");
+    if (!signedOut) {
+      return fail("The password was changed, but the account could not be signed out of its devices. Press Sign out everywhere.");
+    }
     return ok(undefined);
   });
 }
@@ -169,11 +172,16 @@ export async function setCounterActiveAction(id: unknown, active: unknown): Prom
 
     const { error } = await createSupabaseAdminClient().from("profiles").update({ active }).eq("id", account.id);
     if (error) return fail("Could not save. Try again.");
-    if (!active) await endSessions(account.id);
+    // Reactivating has no sessions to end.
+    const signedOut = active ? true : await endSessions(account.id);
     await logAccountChange(owner, account.id, active ? "account_reactivated" : "account_deactivated", {
       display_name: account.display_name,
     });
     revalidatePath("/pos/settings");
+    if (!signedOut) {
+      // The account is already locked out of the POS (inactive), but its sign-ins were not ended.
+      return fail("The account was deactivated, but it could not be signed out of its devices. Press Sign out everywhere.");
+    }
     return ok(undefined);
   });
 }

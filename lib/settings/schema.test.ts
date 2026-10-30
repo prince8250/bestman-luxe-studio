@@ -49,4 +49,12 @@ describe("settingsInputSchema", () => {
   it("keeps the backdate limit within 14 days", () => {
     expect(settingsInputSchema.safeParse({ ...base, counterBackdateDays: "15" }).success).toBe(false);
   });
+
+  it("refuses an empty number field instead of saving 0", () => {
+    for (const blank of ["", "   "]) {
+      const result = settingsInputSchema.safeParse({ ...base, maxCounterDiscountPercent: blank });
+      expect(result.error?.issues[0].message).toBe("Maximum counter discount: enter a number.");
+    }
+    expect(settingsInputSchema.parse({ ...base, maxCounterDiscountPercent: " 15 " }).maxCounterDiscountPercent).toBe(15);
+  });
 });

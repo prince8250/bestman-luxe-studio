@@ -18,6 +18,7 @@ import {
 import { Input } from "@/components/ui/input";
 
 import { removeSampleDataAction } from "@/app/pos/(app)/settings/actions";
+import { requestErrorMessage } from "@/lib/actions/request-error";
 
 const LABELS: Record<string, string> = {
   sales: "sales",
@@ -53,8 +54,8 @@ export function SampleData({ summary }: { summary: Record<string, number> }) {
       if (!result.ok) return setError(result.error);
       toast.success("Sample data removed. The POS is ready for real use.");
       setOpen(false);
-    } catch {
-      setError("Could not reach the server. Check the internet connection and try again.");
+    } catch (error) {
+      setError(requestErrorMessage(error));
     } finally {
       setPending(false);
     }

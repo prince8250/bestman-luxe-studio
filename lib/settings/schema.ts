@@ -71,12 +71,17 @@ const ghs = (label: string) =>
     return pesewas;
   });
 
+// An empty field must not quietly become 0 (Number("") is 0), so blank text
+// is refused before the number is read.
 const wholeNumber = (label: string, min: number, max: number) =>
-  z.coerce
-    .number({ message: `${label}: enter a number.` })
-    .int(`${label}: enter a whole number.`)
-    .min(min, `${label}: use ${min} or more.`)
-    .max(max, `${label}: use ${max} or less.`);
+  z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    z.coerce
+      .number({ message: `${label}: enter a number.` })
+      .int(`${label}: enter a whole number.`)
+      .min(min, `${label}: use ${min} or more.`)
+      .max(max, `${label}: use ${max} or less.`),
+  );
 
 export const settingsInputSchema = z.object({
   studioName: z.string().trim().min(1, "Enter the studio name.").max(80),

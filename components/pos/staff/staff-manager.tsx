@@ -18,6 +18,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import type { ActionResult } from "@/lib/actions/result";
 import type { StaffRow } from "@/lib/staff/schema";
 import { cn } from "@/lib/utils";
+import { requestErrorMessage } from "@/lib/actions/request-error";
 
 import { archiveStaffAction, deleteStaffAction, restoreStaffAction } from "@/app/pos/(app)/staff/actions";
 
@@ -45,8 +46,8 @@ export function StaffManager({ staff }: { staff: StaffRow[] }) {
       if (result.ok) toast.success(success);
       else toast.error(result.error);
       return result.ok;
-    } catch {
-      toast.error("Could not reach the server. Check the internet connection and try again.");
+    } catch (error) {
+      toast.error(requestErrorMessage(error));
       return false;
     } finally {
       setBusyId(null);

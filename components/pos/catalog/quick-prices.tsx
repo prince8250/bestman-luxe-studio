@@ -8,6 +8,7 @@ import { FormError } from "@/components/pos/form-fields";
 import type { CategoryRow, ServiceRow } from "@/lib/catalog/schema";
 import { formatGhs, parseGhs, pesewasToInput } from "@/lib/money";
 import { cn } from "@/lib/utils";
+import { requestErrorMessage } from "@/lib/actions/request-error";
 
 import { updatePricesAction } from "@/app/pos/(app)/services/actions";
 
@@ -45,8 +46,8 @@ export function QuickPrices({ services, categories }: { services: ServiceRow[]; 
         return;
       }
       toast.success(`${result.data.changed} ${result.data.changed === 1 ? "price" : "prices"} saved`);
-    } catch {
-      setError("Could not reach the server. Check the internet connection and try again.");
+    } catch (error) {
+      setError(requestErrorMessage(error));
     } finally {
       setPending(false);
     }
