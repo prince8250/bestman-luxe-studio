@@ -48,3 +48,14 @@ On a laptop with an ordinary printer, open any receipt and choose **A4 paper** a
 - Every customer pays at the counter first and gets a receipt.
 - A staff member starts work only when they are handed the STAFF COPY for that service, and keeps it.
 - At closing, each staff member's STAFF COPY slips should match their count in the day report. A missing slip or an extra service means something was not rung up.
+
+## When the internet or power is down (spec 12)
+
+The POS needs the internet. When it cannot be reached, keep selling on paper and enter the sales later.
+
+1. Print a few **paper sales sheets** in advance (New sale → Record a past sale → Print a blank paper sales sheet, or open `/pos/paper-sheet`) and keep them at the counter.
+2. While the POS is down, write one row per sale: time, customer phone, service, staff, amount, and how they paid.
+3. When the POS is back, open **New sale → Record a past sale**, choose the date, and for each row enter the time, the services and staff, and the payment, then **Save past sale**. Tick "Entered" on the sheet. The date stays chosen for the next row; type each row's time.
+4. Past sales count on the day they really happened, are marked "Past sale" in the sales list, and the owner is told. The counter can go back as many days as Settings allows (3 by default); the owner up to 14 days.
+
+Recommended (no setup in the POS): a backup mobile internet device (MiFi) for when the main internet fails, and a small UPS for the PC, the router, and the receipt printer, so a short power cut does not stop the counter.

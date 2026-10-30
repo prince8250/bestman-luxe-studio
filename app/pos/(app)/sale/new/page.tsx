@@ -25,7 +25,7 @@ export default async function NewSalePage() {
       .order("name"),
     supabase.from("staff").select("id, name, title, photo_path").eq("active", true).order("sort_order").order("name"),
     supabase.from("service_staff").select("service_id, staff_id"),
-    supabase.from("studio_settings").select("max_counter_discount_percent").eq("id", true).single(),
+    supabase.from("studio_settings").select("max_counter_discount_percent, counter_backdate_days").eq("id", true).single(),
     supabase.from("day_closes").select("id").eq("business_date", accraDate()).is("reopened_at", null).maybeSingle(),
   ]);
   if (categories.error || services.error || staff.error || assignments.error || settings.error) {
@@ -63,6 +63,8 @@ export default async function NewSalePage() {
       userId={user.id}
       role={user.role}
       maxCounterDiscountPercent={settings.data.max_counter_discount_percent}
+      // Record a past sale (spec 12): the owner up to 14 days back, the counter up to the Settings limit.
+      backdateDays={user.role === "owner" ? 14 : settings.data.counter_backdate_days}
       dayClosed={Boolean(todayClose.data)}
     />
   );

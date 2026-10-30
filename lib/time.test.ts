@@ -1,6 +1,23 @@
 import { describe, expect, it } from "vitest";
 
-import { accraDate, accraDayStart, formatAccraDayTime, formatAccraTime } from "@/lib/time";
+import { accraDate, accraDayStart, addDays, formatAccraDayTime, formatAccraTime, formatBusinessDate, startOfWeek } from "@/lib/time";
+
+describe("business date arithmetic", () => {
+  it("adds days across months and years", () => {
+    expect(addDays("2026-10-30", 2)).toBe("2026-11-01");
+    expect(addDays("2027-01-01", -1)).toBe("2026-12-31");
+  });
+
+  it("finds the Monday of the week", () => {
+    expect(startOfWeek("2026-10-30")).toBe("2026-10-26"); // Friday
+    expect(startOfWeek("2026-10-26")).toBe("2026-10-26"); // Monday
+    expect(startOfWeek("2026-11-01")).toBe("2026-10-26"); // Sunday
+  });
+
+  it("formats a business date", () => {
+    expect(formatBusinessDate("2026-10-30")).toBe("Fri 30 Oct 2026");
+  });
+});
 
 describe("studio time (Africa/Accra)", () => {
   it("gives the business date in Accra", () => {

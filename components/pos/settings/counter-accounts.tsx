@@ -20,6 +20,7 @@ import type { ActionResult } from "@/lib/actions/result";
 import { counterAccountSchema, type CounterAccountRow } from "@/lib/settings/schema";
 import { formatAccraDayTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
+import { requestErrorMessage } from "@/lib/actions/request-error";
 
 import {
   createCounterAccountAction,
@@ -81,15 +82,15 @@ export function CounterAccounts({ accounts }: { accounts: CounterAccountRow[] })
               </div>
               <div className="flex flex-wrap gap-1">
                 {account.active && (
-                  <>
-                    <PosButton variant="secondary" onClick={() => setDialog({ kind: "reset", account })}>
-                      <KeyRound /> New password
-                    </PosButton>
-                    <PosButton variant="ghost" onClick={() => setDialog({ kind: "signout", account })}>
-                      <LogOut /> Sign out everywhere
-                    </PosButton>
-                  </>
+                  <PosButton variant="secondary" onClick={() => setDialog({ kind: "reset", account })}>
+                    <KeyRound /> New password
+                  </PosButton>
                 )}
+                {/* Also for a deactivated account: if signing it out failed when it
+                    was deactivated, the owner is asked to press this. */}
+                <PosButton variant="ghost" onClick={() => setDialog({ kind: "signout", account })}>
+                  <LogOut /> Sign out everywhere
+                </PosButton>
                 <PosButton variant="ghost" onClick={() => setDialog({ kind: "active", account })}>
                   <Power /> {account.active ? "Deactivate" : "Reactivate"}
                 </PosButton>
@@ -158,8 +159,8 @@ function CreateAccount({ onDone }: { onDone: () => void }) {
       if (!result.ok) return setFormError(result.error);
       toast.success(`Account created for ${displayName.trim()}. Give them the email and temporary password.`);
       onDone();
-    } catch {
-      setFormError("Could not reach the server. Check the internet connection and try again.");
+    } catch (error) {
+      setFormError(requestErrorMessage(error));
     } finally {
       setPending(false);
     }
@@ -221,8 +222,8 @@ function ResetPassword({ account, onDone }: { account: CounterAccountRow; onDone
       if (!result.ok) return setError(result.error);
       toast.success(`New password set for ${account.displayName}. They were signed out everywhere.`);
       onDone();
-    } catch {
-      setError("Could not reach the server. Check the internet connection and try again.");
+    } catch (error) {
+      setError(requestErrorMessage(error));
     } finally {
       setPending(false);
     }
@@ -299,8 +300,8 @@ function Confirm({
                 toast.success(success);
                 onDone();
               } else toast.error(result.error);
-            } catch {
-              toast.error("Could not reach the server. Check the internet connection and try again.");
+            } catch (error) {
+              toast.error(requestErrorMessage(error));
             } finally {
               setPending(false);
             }

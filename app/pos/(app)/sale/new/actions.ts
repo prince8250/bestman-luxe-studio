@@ -44,6 +44,9 @@ const saleSchema = z.object({
       }),
     )
     .max(4, "Use at most 4 payments."),
+  // "Record a past sale" (spec 12): when it really happened. create_sale
+  // refuses the future and anything beyond this account's limit.
+  paidAt: z.iso.datetime({ offset: true }).nullable().default(null),
 });
 
 export interface ConfirmedSale {
@@ -52,6 +55,7 @@ export interface ConfirmedSale {
   total: number;
   afterClose: boolean;
   existing: boolean;
+  isBackdated: boolean;
 }
 
 export async function confirmSaleAction(input: unknown): Promise<ActionResult<ConfirmedSale>> {
@@ -73,6 +77,7 @@ export async function confirmSaleAction(input: unknown): Promise<ActionResult<Co
         customer_phone: phone,
         customer_name: sale.customerName,
         appointment_id: sale.appointmentId,
+        ...(sale.paidAt ? { paid_at: sale.paidAt } : {}),
         items: sale.lines.map((line) => ({
           service_id: line.serviceId,
           item_name: line.itemName,
@@ -91,7 +96,14 @@ export async function confirmSaleAction(input: unknown): Promise<ActionResult<Co
     });
     if (error || !data) return fail(dbErrorMessage(error ?? { message: "no_sale" }, "create_sale"));
 
-    const result = data as { sale_id: string; receipt_no: string; total: number; after_close: boolean; existing: boolean };
+    const result = data as {
+      sale_id: string;
+      receipt_no: string;
+      total: number;
+      after_close: boolean;
+      existing: boolean;
+      is_backdated: boolean;
+    };
     revalidatePath("/pos/today");
     revalidatePath("/pos/sales");
     return ok({
@@ -100,6 +112,7 @@ export async function confirmSaleAction(input: unknown): Promise<ActionResult<Co
       total: result.total,
       afterClose: result.after_close,
       existing: result.existing,
+      isBackdated: result.is_backdated,
     });
   });
 }

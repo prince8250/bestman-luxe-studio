@@ -140,9 +140,12 @@ export async function resetCounterPasswordAction(input: unknown): Promise<Action
       console.error("password reset failed", error.message);
       return fail("Could not change the password. Try again.");
     }
-    await endSessions(account.id);
+    const signedOut = await endSessions(account.id);
     await logAccountChange(owner, account.id, "account_password_reset", { display_name: account.display_name });
     revalidatePath("/pos/settings");
+    if (!signedOut) {
+      return fail("The password was changed, but the account could not be signed out of its devices. Press Sign out everywhere.");
+    }
     return ok(undefined);
   });
 }
@@ -159,7 +162,9 @@ export async function signOutCounterEverywhereAction(id: unknown): Promise<Actio
   });
 }
 
-// Deactivating also signs the account out everywhere at once.
+// Deactivating also signs the account out everywhere at once. Reactivating
+// first ends any sign-in left over from before (for example when ending them
+// failed at deactivation), so the person must sign in again.
 export async function setCounterActiveAction(id: unknown, active: unknown): Promise<ActionResult> {
   return runPosAction("accounts.manage", async (owner) => {
     const parsed = z.uuid().safeParse(id);
@@ -167,13 +172,19 @@ export async function setCounterActiveAction(id: unknown, active: unknown): Prom
     const account = await findCounterAccount(parsed.data);
     if (!account) return fail("That counter account was not found.");
 
+    if (active && !(await endSessions(account.id))) return fail("Could not reactivate the account. Try again.");
+
     const { error } = await createSupabaseAdminClient().from("profiles").update({ active }).eq("id", account.id);
     if (error) return fail("Could not save. Try again.");
-    if (!active) await endSessions(account.id);
+    const signedOut = active ? true : await endSessions(account.id);
     await logAccountChange(owner, account.id, active ? "account_reactivated" : "account_deactivated", {
       display_name: account.display_name,
     });
     revalidatePath("/pos/settings");
+    if (!signedOut) {
+      // The account is already locked out of the POS (inactive), but its sign-ins were not ended.
+      return fail("The account was deactivated, but it could not be signed out of its devices. Press Sign out everywhere.");
+    }
     return ok(undefined);
   });
 }

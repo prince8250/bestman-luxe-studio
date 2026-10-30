@@ -19,7 +19,7 @@ export const metadata: Metadata = { title: "Receipt" };
 export default async function ReceiptPage({ params, searchParams }: PageProps<"/pos/receipts/[saleId]">) {
   const { allowed } = await pageAccess("sale.reprint");
   const { saleId } = await params;
-  const { print } = await searchParams;
+  const { print, from } = await searchParams;
   if (!allowed || !z.uuid().safeParse(saleId).success) return <ReceiptMissing />;
 
   const supabase = await createSupabaseServerClient();
@@ -36,7 +36,14 @@ export default async function ReceiptPage({ params, searchParams }: PageProps<"/
 
   return (
     <>
-      <PrintControls saleId={receipt.id} receiptNo={receipt.receipt_no} prints={receipt.prints} paper={paper} autoPrint={print === "1"} />
+      <PrintControls
+        saleId={receipt.id}
+        receiptNo={receipt.receipt_no}
+        prints={receipt.prints}
+        paper={paper}
+        autoPrint={print === "1"}
+        back={from === "sale" ? { href: `/pos/sales/${receipt.id}`, label: "Sale" } : { href: "/pos/sale/new", label: "New sale" }}
+      />
       <main className="flex-1 overflow-x-auto p-4 md:p-8 print:overflow-visible print:p-0">
         <div className={cn("mx-auto", paper === "a4" ? "grid w-[190mm] grid-cols-2 gap-[6mm] print:w-auto" : "flex w-fit flex-col gap-6 print:block")}>
           {copies.map((copy) => (

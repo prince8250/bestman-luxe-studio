@@ -20,6 +20,7 @@ import type { ActionResult } from "@/lib/actions/result";
 import type { CategoryRow, ServiceRow, StaffOption } from "@/lib/catalog/schema";
 import { formatGhs } from "@/lib/money";
 import { cn } from "@/lib/utils";
+import { requestErrorMessage } from "@/lib/actions/request-error";
 
 import {
   deleteCategoryAction,
@@ -69,9 +70,9 @@ export function CatalogManager({ services, categories, staff }: CatalogManagerPr
       if (result.ok) toast.success(success);
       else toast.error(result.error);
       return result.ok;
-    } catch {
+    } catch (error) {
       // The request itself failed (for example the internet dropped).
-      toast.error("Could not reach the server. Check the internet connection and try again.");
+      toast.error(requestErrorMessage(error));
       return false;
     } finally {
       setBusy(false);
