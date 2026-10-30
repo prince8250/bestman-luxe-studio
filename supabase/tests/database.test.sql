@@ -434,6 +434,28 @@ begin
   v_message := pg_temp.run_as(v_owner, 'delete from public.audit_log');
   perform pg_temp.expect(v_message like 'permission denied%', 'the owner account has no delete permission on audit_log', v_message);
 
+  -- The owner manages staff and settings through their own session (RLS and
+  -- the check constraints run as that user).
+  v_message := pg_temp.run_as(v_owner, $q$
+    insert into public.staff (name, title, phone, show_on_website, bookable_online, sort_order)
+    values ('Test Yaw', 'Barber', '+233245551234', true, true, 9)
+  $q$);
+  perform pg_temp.expect(v_message = 'OK', 'the owner can add a staff member with a phone number', v_message);
+  v_message := pg_temp.run_as(v_owner, $q$
+    update public.staff set active = false, archived_at = now() where name = 'Test Yaw'
+  $q$);
+  perform pg_temp.expect(v_message = 'OK'
+    and exists (select 1 from public.audit_log where action = 'staff_archived' and after ->> 'name' = 'Test Yaw'),
+    'the owner can archive a staff member and the change is logged', v_message);
+  v_message := pg_temp.run_as(v_counter, $q$
+    insert into public.staff (name) values ('Sneaky')
+  $q$);
+  perform pg_temp.expect(v_message like 'new row violates row-level security%', 'a counter user cannot add staff', v_message);
+  v_message := pg_temp.run_as(v_owner, $q$
+    update public.studio_settings set phone = '+233241112222', owner_alert_phone = '+233241113333'
+  $q$);
+  perform pg_temp.expect(v_message = 'OK', 'the owner can update studio settings, including phone numbers', v_message);
+
   -- Price changes in the catalog are logged automatically.
   perform pg_temp.run_as(v_owner, format($q$ update public.services set price = 11000 where id = %L $q$, v_cut));
   perform pg_temp.expect(exists (select 1 from public.audit_log where entity_id = v_cut and action = 'service_price_changed'

@@ -8,7 +8,7 @@ Update this file whenever the current phase, active feature, or implementation s
 
 ## Current Goal
 
-- `05-pos-staff.md`.
+- `06-pos-services-and-categories.md`.
 
 ## Completed
 
@@ -19,6 +19,8 @@ Update this file whenever the current phase, active feature, or implementation s
 - **03 POS login**: `/pos/login` (email + password, Supabase Auth through a server action), session refresh and signed-out redirect in `proxy.ts`, `getPosUser()` data access layer (`lib/auth/pos-user.ts`, active profile required), `sign_in_events` row on every sign-in (the sign-in is refused if it cannot be recorded), one generic error for every failure, failed attempts slowed after 3 and locked after 10 per email and per IP in 15-minute windows (`rate_limit_*` functions, migration `20261030130000`). Owner lands on `/pos`, counter on `/pos/sale/new`. Route groups: `app/pos/login` (public) and `app/pos/(app)` (signed-in; temporary top bar until spec 04). Verified in the browser by the developer: wrong password gives the generic error, owner and counter sign in to their home pages, a deactivated counter is refused, sign-out returns to the login page; `sign_in_events` rows checked in the database. Public sign-up stays disabled (spec 02).
 
 - **04 POS shell, permissions, Find**: `lib/auth/permissions.ts` (one entry per row of the architecture Permissions table, covered by a test), `requirePosUser` / `requirePermission` / `pageAccess` (`lib/auth/require-pos-user.ts`), `runPosAction` and the `ActionResult` shape (`lib/actions/result.ts`) so owner-only actions refuse a counter user before running. Shell in `app/pos/(app)/layout.tsx`: sidebar (240px, collapsible to icons on desktop with the choice kept in a cookie, icon rail on tablet), top bar with Find (`Ctrl+K`) and the signed-in name and role, phone bottom bar with "More" sheet, owner backup-status card and counter day-status card. Placeholder pages for every POS route with the permission check in place; owner-only pages show "This page is for the owner" to counter users. `/pos/find` classifies receipt numbers, booking codes, and phones (lookups wired in specs 10, 13, 36). `lib/time.ts` is the shared Africa/Accra helper. Checked in the browser as counter and owner at 1280, 768, and 375px.
+
+- **05 Staff management**: `/pos/staff` (owner only): active and removed lists as cards, add/edit sheet (name, title, internal phone normalised to E.164, bio, photo, show on website, bookable online, order), Remove = archive with a dialog that explains history is kept, Restore, and permanent Delete only for removed staff with no sales or bookings. Photos are resized in the browser to 800px WebP (`lib/images/compress.ts`) and uploaded to the `staff` bucket; the database stores only the path, and replaced or deleted photos are removed from storage. Shared `lib/phone.ts` (Ghana formats to E.164, display format), `lib/storage.ts`, `lib/staff/schema.ts` (one Zod schema for the form and the action). Archive/restore are logged by the existing trigger. Migrations `20261030140000` (EXECUTE on `private.is_e164` for signed-in users: the phone check constraints run as the writing user, so owner edits of staff and settings failed) and `20261030150000` (owner SELECT on image-bucket objects: Storage only removes files the caller can select). Verified in the browser at 1280, 768, and 375px as the owner: validation messages, add with photo (116 KB JPEG became a 41 KB WebP), edit, remove, restore, delete; a staff member with sales (Kofi) can be removed and restored but not deleted; visitors get no phone column from `public_staff` and are refused `staff.phone`. Archived staff are excluded from `public_staff`; the New sale and booking pickers (specs 08, 32) must also filter `active`.
 
 ## Development Database And Test Accounts
 
@@ -49,7 +51,7 @@ Specs live in `context/feature-specs/`. Build in order unless the developer says
 - [x] 04 POS shell, permissions, and Find
 
 **Phase 2: POS catalog and settings**
-- [ ] 05 Staff management
+- [x] 05 Staff management
 - [ ] 06 Services, categories, and prices
 - [ ] 07 Studio settings and counter accounts
 
