@@ -3,7 +3,8 @@
 --
 -- Fills an empty database with clearly labeled sample data so every screen and
 -- report has something to show:
---   - sample studio settings (marked "(sample)")
+--   - studio settings: the real phone, WhatsApp, and Instagram; everything else
+--     is sample text marked "(sample)"
 --   - the studio's real categories and services, with PLACEHOLDER prices and
 --     durations (the owner sets the real ones in POS Services)
 --   - 4 sample staff (Kofi, Kwame, Ama, Efua) with hours and services
@@ -76,8 +77,9 @@ begin
   -- ---------------------------------------------------------------------------
   update public.studio_settings set
     studio_name = 'Bestman Luxe Studio',
-    phone = '+233200000000',
-    whatsapp = '+233200000000',
+    -- Real studio phone and WhatsApp (developer, 2026-10-30).
+    phone = '+233244565866',
+    whatsapp = '+233244565866',
     address = 'Asafo, near KsTU, Kumasi (sample address)',
     map_url = 'https://www.google.com/maps/search/?api=1&query=Asafo+Kumasi',
     opening_hours = '[
@@ -89,7 +91,7 @@ begin
       {"day": "Saturday", "hours": "08:00 – 21:00"},
       {"day": "Sunday", "hours": "12:00 – 18:00"}
     ]'::jsonb,
-    social_links = '{"instagram": "https://www.instagram.com/", "tiktok": "https://www.tiktok.com/"}'::jsonb,
+    social_links = '{"instagram": "https://www.instagram.com/bestman_luxe_studio_/"}'::jsonb,
     about_text = '(sample) Bestman Luxe Studio is a barbering and beauty studio in Kumasi. Sharp cuts, clean styling, and care for your skin and nails, all under one roof.',
     receipt_header = 'Bestman Luxe Studio',
     receipt_footer = 'Thank you for visiting! (sample footer)',

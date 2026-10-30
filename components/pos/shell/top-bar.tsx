@@ -1,12 +1,9 @@
 import Image from "next/image";
 import Link from "next/link";
-import { LogOut } from "lucide-react";
-
 import { homePathFor, type PosUser } from "@/lib/auth/types";
 
-import { signOutAction } from "@/app/pos/login/actions";
-
 import { FindBox } from "./find-box";
+import { SignOutButton } from "./sign-out-button";
 
 // The signed-in name and role are always visible, so nobody forgets which
 // account is signed in on the shared counter PC (ui-context.md, "Role Home Pages").
@@ -25,16 +22,7 @@ export function TopBar({ user }: { user: PosUser }) {
           <p className="truncate text-sm font-medium">{user.displayName}</p>
           <p className="text-xs text-pos-text-muted capitalize">{user.role}</p>
         </div>
-        <form action={signOutAction}>
-          <button
-            type="submit"
-            aria-label="Sign out"
-            title="Sign out"
-            className="inline-flex h-11 w-11 items-center justify-center rounded-[10px] text-pos-text-muted transition-colors duration-150 hover:bg-pos-subtle hover:text-pos-text focus-visible:outline-2 focus-visible:outline-pos-accent"
-          >
-            <LogOut className="h-5 w-5" />
-          </button>
-        </form>
+        <SignOutButton variant="icon" />
       </div>
     </header>
   );

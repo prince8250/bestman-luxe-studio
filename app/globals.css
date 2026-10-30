@@ -192,6 +192,14 @@
   color-scheme: light;
 }
 
+/* Receipts (spec 09) print black on white, whatever the screen background. */
+@media print {
+  html.pos,
+  html.pos body {
+    background: #ffffff;
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

@@ -512,6 +512,42 @@ export type Database = {
         }
         Relationships: []
       }
+      receipt_prints: {
+        Row: {
+          id: string
+          printed_at: string
+          printed_by: string
+          sale_id: string
+        }
+        Insert: {
+          id?: string
+          printed_at?: string
+          printed_by: string
+          sale_id: string
+        }
+        Update: {
+          id?: string
+          printed_at?: string
+          printed_by?: string
+          sale_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "receipt_prints_printed_by_fkey"
+            columns: ["printed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "receipt_prints_sale_id_fkey"
+            columns: ["sale_id"]
+            isOneToOne: false
+            referencedRelation: "sales"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sale_items: {
         Row: {
           created_at: string
@@ -1278,6 +1314,7 @@ export type Database = {
       }
       create_appointment: { Args: { payload: Json }; Returns: Json }
       create_sale: { Args: { payload: Json }; Returns: Json }
+      customer_lookup: { Args: { p_phone: string }; Returns: Json }
       decide_void_request: {
         Args: { p_approve: boolean; p_note: string; p_request_id: string }
         Returns: undefined
@@ -1291,6 +1328,7 @@ export type Database = {
         }
         Returns: Json
       }
+      end_user_sessions: { Args: { p_user_id: string }; Returns: number }
       mark_no_show: { Args: { p_appointment_id: string }; Returns: undefined }
       rate_limit_clear: { Args: { p_key: string }; Returns: undefined }
       rate_limit_count: {
@@ -1305,6 +1343,8 @@ export type Database = {
         Args: { p_item_id: string; p_new_staff_id: string; p_reason: string }
         Returns: undefined
       }
+      receipt_data: { Args: { p_sale_id: string }; Returns: Json }
+      record_receipt_print: { Args: { p_sale_id: string }; Returns: number }
       remove_sample_data: { Args: { p_keep_catalog?: boolean }; Returns: Json }
       reopen_day: {
         Args: { p_business_date: string; p_reason: string }
@@ -1318,6 +1358,7 @@ export type Database = {
         Args: { p_reason: string; p_sale_id: string }
         Returns: string
       }
+      sample_data_summary: { Args: never; Returns: Json }
       save_service: { Args: { payload: Json }; Returns: string }
       update_service_prices: { Args: { changes: Json }; Returns: number }
       void_sale: {

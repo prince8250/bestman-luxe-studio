@@ -40,11 +40,17 @@ export function StaffManager({ staff }: { staff: StaffRow[] }) {
 
   async function run(id: string, action: () => Promise<ActionResult>, success: string) {
     setBusyId(id);
-    const result = await action();
-    setBusyId(null);
-    if (result.ok) toast.success(success);
-    else toast.error(result.error);
-    return result.ok;
+    try {
+      const result = await action();
+      if (result.ok) toast.success(success);
+      else toast.error(result.error);
+      return result.ok;
+    } catch {
+      toast.error("Could not reach the server. Check the internet connection and try again.");
+      return false;
+    } finally {
+      setBusyId(null);
+    }
   }
 
   return (

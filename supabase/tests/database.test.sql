@@ -21,8 +21,10 @@ $$;
 create function pg_temp.run_as(p_user uuid, p_sql text)
 returns text language plpgsql as $$
 begin
+  -- Test sessions use the user's id as the session id (see the fixtures).
   perform set_config('request.jwt.claims',
-    case when p_user is null then '' else json_build_object('sub', p_user, 'role', 'authenticated')::text end, true);
+    case when p_user is null then ''
+         else json_build_object('sub', p_user, 'role', 'authenticated', 'session_id', p_user)::text end, true);
   perform set_config('request.jwt.claim.sub', coalesce(p_user::text, ''), true);
   begin
     if p_user is null then
@@ -55,7 +57,8 @@ returns jsonb language plpgsql as $$
 declare
   v_out jsonb;
 begin
-  perform set_config('request.jwt.claims', json_build_object('sub', p_user, 'role', 'authenticated')::text, true);
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', p_user, 'role', 'authenticated', 'session_id', p_user)::text, true);
   perform set_config('request.jwt.claim.sub', p_user::text, true);
   execute 'set local role authenticated';
   execute p_sql into v_out;
@@ -96,6 +99,8 @@ begin
   insert into public.profiles (id, display_name, role) values
     (v_owner, 'Test Owner', 'owner'),
     (v_counter, 'Test Counter', 'counter');
+  -- A live Auth session for each (a POS user needs one; see private.has_live_session).
+  insert into auth.sessions (id, user_id) values (v_owner, v_owner), (v_counter, v_counter);
 
   update public.studio_settings set max_counter_discount_percent = 20, counter_backdate_days = 3,
     default_opening_float = 20000, cash_difference_tolerance = 0, override_alert_threshold = 5000;
@@ -503,6 +508,61 @@ begin
   perform pg_temp.expect(pg_temp.run_as(v_counter, format($q$ update public.services set price = 1 where id = %L $q$, v_cut)) = 'OK'
     and (select price from public.services where id = v_cut) = 11000,
     'a counter user cannot change prices (the update matches no rows)');
+
+  -- Ending an account's sessions (password reset, deactivation, sign out of
+  -- all devices) locks it out on the next request, not when its token expires.
+  perform pg_temp.expect(pg_temp.run_as(v_counter, format($q$ select public.end_user_sessions(%L) $q$, v_owner)) like 'permission denied%',
+    'only the server (service role) can end sessions');
+  perform pg_temp.as_db_owner();
+  perform public.end_user_sessions(v_counter);
+  v_message := pg_temp.run_as(v_counter, format($q$
+    select public.create_sale('{"client_request_id": "%s", "items": %s, "payments": [{"method": "cash", "amount": 10000}]}'::jsonb)
+  $q$, gen_random_uuid(), format(v_items_ok, v_cut, v_kofi)));
+  v_count := (pg_temp.call_as(v_counter, 'select to_jsonb(count(*)) from public.services'))::text::bigint;
+  perform pg_temp.expect(v_message = 'not_authorized' and v_count = 0,
+    'after their sessions are ended, an account cannot sell or read POS data even with its old token', v_message);
+  perform pg_temp.as_db_owner();
+  insert into auth.sessions (id, user_id) values (v_counter, v_counter);
+
+  -- customer_lookup: visits for a returning customer, for both roles, no money.
+  v_result := pg_temp.call_as(v_counter, format($q$ select public.customer_lookup(%L) $q$, v_phone));
+  perform pg_temp.expect((v_result ->> 'found')::boolean and (v_result ->> 'full_name') = 'Test Ama'
+    and (v_result ->> 'visits')::integer >= 0 and not (v_result ? 'total') and not (v_result ? 'spent'),
+    'customer_lookup finds a returning customer with visits and no money figures', v_result::text);
+  v_result := pg_temp.call_as(v_counter, $q$ select public.customer_lookup('+233209999777') $q$);
+  perform pg_temp.expect(v_result = '{"found": false}'::jsonb, 'customer_lookup reports an unknown number', v_result::text);
+  perform pg_temp.expect(pg_temp.run_as(null, $q$ select public.customer_lookup('+233209999777') $q$) like 'permission denied%',
+    'visitors cannot look up customers');
+
+  -- Receipts (spec 09): built from stored data, the counter sees today's only,
+  -- and every print after the first is a reprint.
+  v_result := pg_temp.call_as(v_counter, format($q$ select public.receipt_data(%L) $q$, v_sale));
+  perform pg_temp.expect((v_result ->> 'receipt_no') ~ '^BLS-' and (v_result ->> 'counter_name') = 'Test Counter'
+    and jsonb_array_length(v_result -> 'lines') >= 1 and (v_result -> 'lines' -> 0 ->> 'staff_name') is not null
+    and jsonb_array_length(v_result -> 'payments') >= 1 and (v_result -> 'studio' ->> 'copies')::integer between 1 and 3
+    and (v_result ->> 'prints')::integer = 0,
+    'receipt_data returns the stored sale with lines, staff names, payments, the counter name, and settings', v_result::text);
+  v_result := pg_temp.call_as(v_owner, format($q$
+    select public.create_sale('{"client_request_id": "%s", "payments": [{"method": "momo", "amount": 4500}],
+      "items": [{"service_id": "%s", "staff_id": "%s", "unit_price": 4500, "quantity": 1}]}'::jsonb)
+  $q$, gen_random_uuid(), v_wash, v_kofi));
+  v_result := pg_temp.call_as(v_counter, format($q$ select public.receipt_data(%L) $q$, v_result ->> 'sale_id'));
+  perform pg_temp.expect((v_result ->> 'counter_name') = 'Test Owner',
+    'the counter can print a receipt for a sale the owner rang today (and sees who rang it)', v_result::text);
+  v_message := pg_temp.run_as(v_counter, format($q$ select public.receipt_data(%L) $q$, v_old_sale));
+  perform pg_temp.expect(v_message = 'not_found', 'the counter cannot open a receipt from two days ago', v_message);
+  v_result := pg_temp.call_as(v_owner, format($q$ select public.receipt_data(%L) $q$, v_old_sale));
+  perform pg_temp.expect(v_result ->> 'id' = v_old_sale::text, 'the owner can open any receipt');
+  perform pg_temp.expect(pg_temp.run_as(null, format($q$ select public.receipt_data(%L) $q$, v_sale)) like 'permission denied%',
+    'visitors cannot open receipts');
+
+  v_result := pg_temp.call_as(v_counter, format($q$ select to_jsonb(public.record_receipt_print(%L)) $q$, v_sale));
+  v_result := v_result || pg_temp.call_as(v_counter, format($q$ select to_jsonb(public.record_receipt_print(%L)) $q$, v_sale));
+  perform pg_temp.expect(v_result = '[1, 2]'::jsonb
+    and (pg_temp.call_as(v_counter, format($q$ select public.receipt_data(%L) $q$, v_sale)) ->> 'prints')::integer = 2,
+    'record_receipt_print numbers each print (1 = original, then reprints)', v_result::text);
+  v_message := pg_temp.run_as(v_counter, format($q$ insert into public.receipt_prints (sale_id, printed_by) values (%L, %L) $q$, v_sale, v_counter));
+  perform pg_temp.expect(v_message like 'permission denied%', 'nobody writes receipt_prints directly', v_message);
 
   -- Owner alerts are claimed once per occurrence (a rerun job or a retry
   -- cannot queue a second SMS for the same thing).
