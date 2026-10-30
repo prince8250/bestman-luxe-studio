@@ -456,6 +456,45 @@ begin
   $q$);
   perform pg_temp.expect(v_message = 'OK', 'the owner can update studio settings, including phone numbers', v_message);
 
+  -- Catalog functions (spec 06): owner only, one transaction each.
+  v_message := pg_temp.run_as(v_counter, format($q$
+    select public.save_service('{"category_id": "%s", "name": "Sneaky cut", "price": 100, "duration_minutes": 30}'::jsonb)
+  $q$, v_category));
+  perform pg_temp.expect(v_message = 'not_authorized', 'a counter user cannot add services', v_message);
+
+  v_result := pg_temp.call_as(v_owner, format($q$
+    select to_jsonb(public.save_service('{"category_id": "%s", "name": "Test fade", "price": 6000,
+      "duration_minutes": 40, "staff_ids": ["%s", "%s"]}'::jsonb))
+  $q$, v_category, v_kofi, v_kwame));
+  perform pg_temp.expect((select count(*) from public.service_staff where service_id = (v_result #>> '{}')::uuid) = 2,
+    'the owner saves a service together with its staff assignments');
+  perform pg_temp.call_as(v_owner, format($q$
+    select to_jsonb(public.save_service('{"id": "%s", "category_id": "%s", "name": "Test fade", "price": 6500,
+      "duration_minutes": 40, "staff_ids": ["%s"]}'::jsonb))
+  $q$, v_result #>> '{}', v_category, v_kwame));
+  perform pg_temp.expect(
+    (select array_agg(staff_id) from public.service_staff where service_id = (v_result #>> '{}')::uuid) = array[v_kwame]
+    and exists (select 1 from public.audit_log where entity_id = (v_result #>> '{}')::uuid and action = 'service_price_changed'
+                and (before ->> 'price')::integer = 6000 and (after ->> 'price')::integer = 6500),
+    'editing a service replaces its staff list and logs the price change');
+
+  v_count := (pg_temp.call_as(v_owner, format($q$
+    select to_jsonb(public.update_service_prices('[{"id": "%s", "price": 4500}, {"id": "%s", "price": 7000}]'::jsonb))
+  $q$, v_wash, v_result #>> '{}')))::text::bigint;
+  perform pg_temp.expect(v_count = 2
+    and (select count(*) from public.audit_log where action = 'service_price_changed'
+         and entity_id in (v_wash, (v_result #>> '{}')::uuid) and (after ->> 'price')::integer in (4500, 7000)) = 2,
+    'saving many prices at once logs one change per service');
+
+  perform pg_temp.call_as(v_owner, format($q$
+    select to_jsonb(public.reorder_rows('services', array['%s', '%s']::uuid[]) is null)
+  $q$, v_wash, v_cut));
+  perform pg_temp.expect((select sort_order from public.services where id = v_wash) = 10
+    and (select sort_order from public.services where id = v_cut) = 20,
+    'reorder_rows saves the new order');
+  v_message := pg_temp.run_as(v_owner, $q$ select public.reorder_rows('sales', array[]::uuid[]) $q$);
+  perform pg_temp.expect(v_message = 'invalid_input', 'reorder_rows only works on the owner-managed lists', v_message);
+
   -- Price changes in the catalog are logged automatically.
   perform pg_temp.run_as(v_owner, format($q$ update public.services set price = 11000 where id = %L $q$, v_cut));
   perform pg_temp.expect(exists (select 1 from public.audit_log where entity_id = v_cut and action = 'service_price_changed'

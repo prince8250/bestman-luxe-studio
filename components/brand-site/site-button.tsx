@@ -46,7 +46,10 @@ export interface SiteButtonProps
 
 export function SiteButton({ className, variant, size, fullWidth, asChild = false, ...props }: SiteButtonProps) {
   const Comp = asChild ? Slot.Root : "button";
-  return <Comp className={cn(siteButtonVariants({ variant, size, fullWidth }), className)} {...props} />;
+  // A plain <button> submits its form by default; ours only submit when asked
+  // (type="submit"), so a button added to a form can never submit it by accident.
+  const defaultType = asChild ? {} : { type: "button" as const };
+  return <Comp className={cn(siteButtonVariants({ variant, size, fullWidth }), className)} {...defaultType} {...props} />;
 }
 
 export { siteButtonVariants };

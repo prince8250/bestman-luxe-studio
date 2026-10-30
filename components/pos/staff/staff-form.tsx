@@ -1,19 +1,15 @@
 "use client";
 
 import * as React from "react";
-import Image from "next/image";
-import { ImagePlus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { PosButton } from "@/components/brand-pos/pos-button";
+import { Field, FormError, ImagePicker, posInputClass, ToggleRow } from "@/components/pos/form-fields";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { compressImage } from "@/lib/images/compress";
+import { discardUpload, uploadImage } from "@/lib/images/upload";
 import { formatPhone } from "@/lib/phone";
 import { staffInputSchema, type StaffRow } from "@/lib/staff/schema";
-import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 import { saveStaffAction } from "@/app/pos/(app)/staff/actions";
 
@@ -25,7 +21,7 @@ interface StaffFormProps {
 
 type FieldErrors = Partial<Record<"name" | "title" | "phone" | "bio" | "sortOrder" | "photoPath", string>>;
 
-const inputClass = "h-11 rounded-[10px] bg-pos-surface text-base md:text-sm";
+const inputClass = posInputClass;
 
 // Add or edit one staff member. The photo is resized in the browser (long
 // edge 800px, WebP) and uploaded to the staff bucket only when the owner
@@ -43,12 +39,6 @@ export function StaffForm({ member, nextSortOrder, onDone }: StaffFormProps) {
   const [errors, setErrors] = React.useState<FieldErrors>({});
   const [formError, setFormError] = React.useState<string | null>(null);
   const [pending, setPending] = React.useState(false);
-
-  const previewUrl = React.useMemo(() => (photoFile ? URL.createObjectURL(photoFile) : null), [photoFile]);
-  React.useEffect(() => () => {
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
-  }, [previewUrl]);
-  const shownPhoto = previewUrl ?? (photoRemoved ? null : member?.photoUrl ?? null);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -81,21 +71,13 @@ export function StaffForm({ member, nextSortOrder, onDone }: StaffFormProps) {
     let uploadedPath: string | null = null;
     try {
       if (photoFile) {
-        const image = await compressImage(photoFile, { maxEdge: 800, quality: 0.8 });
-        const folder = member?.id ?? crypto.randomUUID();
-        uploadedPath = `${folder}/${Date.now()}-${crypto.randomUUID().slice(0, 8)}.${image.extension}`;
-        const supabase = createSupabaseBrowserClient();
-        const { error } = await supabase.storage.from("staff").upload(uploadedPath, image.blob, {
-          contentType: image.blob.type,
-          cacheControl: "31536000",
-        });
-        if (error) throw new Error("The photo could not be uploaded. Check the internet connection.");
+        uploadedPath = await uploadImage("staff", photoFile, { folder: member?.id ?? crypto.randomUUID(), maxEdge: 800 });
         draft.photoPath = uploadedPath;
       }
 
       const result = await saveStaffAction(draft);
       if (!result.ok) {
-        if (uploadedPath) await createSupabaseBrowserClient().storage.from("staff").remove([uploadedPath]);
+        if (uploadedPath) await discardUpload("staff", uploadedPath);
         setFormError(result.error);
         return;
       }
@@ -110,45 +92,21 @@ export function StaffForm({ member, nextSortOrder, onDone }: StaffFormProps) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4 px-4 pb-6" noValidate>
-      <div className="flex items-center gap-4">
-        <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-full bg-pos-subtle">
-          {shownPhoto ? (
-            <Image src={shownPhoto} alt="" fill sizes="80px" className="object-cover" unoptimized={Boolean(previewUrl)} />
-          ) : (
-            <span className="display-type flex h-full w-full items-center justify-center text-3xl text-pos-text-muted">
-              {name.trim().charAt(0) || "?"}
-            </span>
-          )}
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <label className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-[10px] border border-pos-border bg-pos-surface px-4 text-sm font-medium hover:bg-pos-subtle focus-within:outline-2 focus-within:outline-pos-accent">
-            <ImagePlus className="h-5 w-5" />
-            {shownPhoto ? "Change photo" : "Add photo"}
-            <input
-              type="file"
-              accept="image/jpeg,image/png,image/webp"
-              className="sr-only"
-              onChange={(event) => {
-                const file = event.target.files?.[0] ?? null;
-                setPhotoFile(file);
-                if (file) setPhotoRemoved(false);
-              }}
-            />
-          </label>
-          {shownPhoto && (
-            <PosButton
-              type="button"
-              variant="ghost"
-              onClick={() => {
-                setPhotoFile(null);
-                setPhotoRemoved(true);
-              }}
-            >
-              <Trash2 /> Remove photo
-            </PosButton>
-          )}
-        </div>
-      </div>
+      <ImagePicker
+        shape="circle"
+        currentUrl={member?.photoUrl ?? null}
+        file={photoFile}
+        removed={photoRemoved}
+        fallback={name.trim().charAt(0) || "?"}
+        onFile={(file) => {
+          setPhotoFile(file);
+          if (file) setPhotoRemoved(false);
+        }}
+        onRemove={() => {
+          setPhotoFile(null);
+          setPhotoRemoved(true);
+        }}
+      />
 
       <Field id="staff-name" label="Name" error={errors.name}>
         <Input id="staff-name" value={name} onChange={(e) => setName(e.target.value)} className={inputClass} autoFocus />
@@ -197,11 +155,7 @@ export function StaffForm({ member, nextSortOrder, onDone }: StaffFormProps) {
         onChange={setBookableOnline}
       />
 
-      {(formError || errors.photoPath) && (
-        <p role="alert" className="rounded-[10px] bg-pos-down-soft px-3 py-2.5 text-sm text-pos-down">
-          {formError ?? errors.photoPath}
-        </p>
-      )}
+      <FormError message={formError ?? errors.photoPath} />
 
       <div className="flex gap-2 pt-2">
         <PosButton type="submit" size="lg" disabled={pending} className="flex-1">
@@ -215,54 +169,3 @@ export function StaffForm({ member, nextSortOrder, onDone }: StaffFormProps) {
   );
 }
 
-function Field({
-  id,
-  label,
-  hint,
-  error,
-  children,
-}: {
-  id: string;
-  label: string;
-  hint?: string;
-  error?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <Label htmlFor={id}>{label}</Label>
-      {children}
-      {error ? (
-        <p className="text-sm text-pos-down" id={`${id}-error`}>
-          {error}
-        </p>
-      ) : (
-        hint && <p className="text-xs text-pos-text-muted">{hint}</p>
-      )}
-    </div>
-  );
-}
-
-function ToggleRow({
-  id,
-  label,
-  hint,
-  checked,
-  onChange,
-}: {
-  id: string;
-  label: string;
-  hint: string;
-  checked: boolean;
-  onChange: (value: boolean) => void;
-}) {
-  return (
-    <div className="flex min-h-11 items-center justify-between gap-4 rounded-[10px] border border-pos-border px-3 py-2">
-      <div>
-        <Label htmlFor={id}>{label}</Label>
-        <p className="mt-0.5 text-xs text-pos-text-muted">{hint}</p>
-      </div>
-      <Switch id={id} checked={checked} onCheckedChange={onChange} />
-    </div>
-  );
-}
