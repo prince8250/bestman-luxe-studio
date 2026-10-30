@@ -1355,6 +1355,62 @@ export type Database = {
         Args: { p_ids: string[]; p_table: string }
         Returns: undefined
       }
+      report_after_close: {
+        Args: { p_from: string; p_to: string }
+        Returns: Json
+      }
+      report_backdated: {
+        Args: { p_from: string; p_to: string }
+        Returns: Json
+      }
+      report_by_category: {
+        Args: { p_from: string; p_to: string }
+        Returns: Json
+      }
+      report_by_channel: {
+        Args: { p_from: string; p_to: string }
+        Returns: Json
+      }
+      report_by_counter_user: {
+        Args: { p_from: string; p_to: string }
+        Returns: Json
+      }
+      report_by_day: { Args: { p_from: string; p_to: string }; Returns: Json }
+      report_by_payment_method: {
+        Args: { p_from: string; p_to: string }
+        Returns: Json
+      }
+      report_by_service: {
+        Args: { p_from: string; p_to: string }
+        Returns: Json
+      }
+      report_by_staff: { Args: { p_from: string; p_to: string }; Returns: Json }
+      report_by_weekday: {
+        Args: { p_from: string; p_to: string }
+        Returns: Json
+      }
+      report_changes: {
+        Args: { p_from: string; p_limit?: number; p_to: string }
+        Returns: Json
+      }
+      report_day_close: {
+        Args: { p_from: string; p_to: string }
+        Returns: Json
+      }
+      report_day_close_export: {
+        Args: { p_business_date: string }
+        Returns: Json
+      }
+      report_repeat_customers: {
+        Args: { p_from: string; p_to: string }
+        Returns: Json
+      }
+      report_summary: { Args: { p_from: string; p_to: string }; Returns: Json }
+      report_void_requests: {
+        Args: { p_from: string; p_to: string }
+        Returns: Json
+      }
+      report_voids: { Args: { p_from: string; p_to: string }; Returns: Json }
       request_void: {
         Args: { p_reason: string; p_sale_id: string }
         Returns: string

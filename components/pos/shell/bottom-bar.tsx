@@ -29,7 +29,7 @@ export function BottomBar({ role }: { role: PosRole }) {
   return (
     <nav
       aria-label="POS"
-      className="fixed inset-x-0 bottom-0 z-40 flex gap-1 border-t border-pos-border bg-pos-surface px-2 pt-1 pb-[max(0.25rem,env(safe-area-inset-bottom))] md:hidden"
+      className="fixed inset-x-0 bottom-0 z-40 flex gap-1 border-t border-pos-border bg-pos-surface px-2 pt-1 pb-[max(0.25rem,env(safe-area-inset-bottom))] md:hidden print:hidden"
     >
       {tabs.map((item) => {
         const active = isActivePath(pathname, item.href);

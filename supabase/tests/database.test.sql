@@ -41,6 +41,47 @@ begin
 end;
 $$;
 
+-- Inserts a balanced paid sale directly (as the database owner), for report
+-- tests on fixed past dates that create_sale would refuse (backdate limit).
+-- p_items: [{"service": uuid|null, "name": text, "staff": uuid|null,
+--            "list": int, "unit": int, "qty": int}]
+create function pg_temp.add_sale(
+  p_paid_at timestamptz, p_by uuid, p_customer uuid, p_items jsonb, p_payments jsonb,
+  p_recorded_at timestamptz default null, p_backdated boolean default false, p_after_close boolean default false)
+returns uuid language plpgsql as $$
+declare
+  v_id uuid;
+  v_subtotal integer;
+  v_discount integer;
+  v_total integer;
+  v_line jsonb;
+  v_no integer := 0;
+begin
+  select coalesce(sum(greatest((l ->> 'list')::integer, (l ->> 'unit')::integer) * coalesce((l ->> 'qty')::integer, 1)), 0),
+         coalesce(sum(greatest((l ->> 'list')::integer - (l ->> 'unit')::integer, 0) * coalesce((l ->> 'qty')::integer, 1)), 0),
+         coalesce(sum((l ->> 'unit')::integer * coalesce((l ->> 'qty')::integer, 1)), 0)
+    into v_subtotal, v_discount, v_total
+    from jsonb_array_elements(p_items) l;
+  insert into public.sales (customer_id, subtotal, discount_total, total, paid_at, recorded_at, is_backdated, after_close,
+                            created_by, client_request_id)
+  values (p_customer, v_subtotal, v_discount, v_total, p_paid_at, coalesce(p_recorded_at, p_paid_at), p_backdated, p_after_close,
+          p_by, gen_random_uuid())
+  returning id into v_id;
+  for v_line in select * from jsonb_array_elements(p_items) loop
+    v_no := v_no + 1;
+    insert into public.sale_items (sale_id, line_no, service_id, item_name, staff_id, list_price, unit_price, quantity, line_total,
+                                   price_override_reason)
+    values (v_id, v_no, nullif(v_line ->> 'service', '')::uuid, v_line ->> 'name', nullif(v_line ->> 'staff', '')::uuid,
+            (v_line ->> 'list')::integer, (v_line ->> 'unit')::integer, coalesce((v_line ->> 'qty')::integer, 1),
+            (v_line ->> 'unit')::integer * coalesce((v_line ->> 'qty')::integer, 1),
+            case when (v_line ->> 'list')::integer <> (v_line ->> 'unit')::integer then 'Test override' end);
+  end loop;
+  insert into public.sale_payments (sale_id, method, amount)
+  select v_id, p ->> 'method', (p ->> 'amount')::integer from jsonb_array_elements(p_payments) p;
+  return v_id;
+end;
+$$;
+
 -- Clears the simulated user, so the next statements run as the database owner.
 create function pg_temp.as_db_owner()
 returns void language plpgsql as $$
@@ -87,6 +128,12 @@ declare
   v_sale3 uuid;
   v_item3 uuid;
   v_customer uuid;
+  v_c1 uuid;
+  v_c2 uuid;
+  v_c3 uuid;
+  v_s4 uuid;
+  v_s5 uuid;
+  v_report jsonb;
   v_count bigint;
   v_close jsonb;
   v_slot timestamptz := date_trunc('hour', now()) + interval '3 days';
@@ -749,6 +796,196 @@ begin
   perform pg_temp.as_db_owner();
   perform pg_temp.expect(v_message = 'OK' and (select full_name from public.customers where id = v_customer) = 'Kojo Mensah',
     'the counter can edit a customer''s name and notes', v_message);
+
+  -- ---------------------------------------------------------------------------
+  -- Report engine (spec 14), on a sample week no other data touches:
+  -- Mon 3 Jan 2000 to Sun 9 Jan 2000 (Accra is UTC+0).
+  --
+  --   Previous week (27 Dec 1999 - 2 Jan 2000)
+  --   P1 Thu 30 Dec  C2       cut  by Kofi   100.00  cash
+  --   P2 Fri 31 Dec  walk-in  wash by Kwame   40.00  cash
+  --   The week
+  --   S1 Mon 10:00   C1       cut  by Kofi   100.00  cash          (rung by the counter)
+  --   S2 Mon 15:00   walk-in  wash x2 Kwame   80.00  MoMo          (counter; 45.00 discounted to 40.00 each)
+  --   S3 Wed 11:00   C2       cut  by Kwame  100.00 + hair oil 35.00 (custom, no staff); cash 100 + card 35; after close
+  --   S4 Fri 18:00   C1       wash by Kofi    40.00  cash, then REASSIGNED to Kwame; a pending void request
+  --   S5 Sat 12:00   C3       cut  by Kofi   100.00  cash, then VOIDED (counts nowhere)
+  --   S6 Sun 23:59   C2       wash by Kofi    40.00  cash, entered Mon 10 Jan (backdated: lands on Sunday)
+  --   S7 Mon 10 Jan 00:00 (next week)  walk-in  cut by Kofi  100.00 cash
+  --   Day close for Mon 3 Jan: expected 300.00, counted 295.00, difference -5.00
+  --
+  -- Hand calculation for the week:
+  --   revenue  = 100 + 80 + 135 + 40 + 40 = GHS 395.00; sales = 5; average = 79.00
+  --   services = 1 + 2 + 1 + 1 + 1 = 6 (the hair oil is not a service)
+  --   customers served = C1, C2 (C3 only on the voided sale) + 1 walk-in = 3
+  --   cash = 100 + 100 + 40 + 40 = 280; MoMo 80; card 35 (adds up to 395)
+  --   Kwame: S2 2 + S3 1 + S4 1 = 4 services, 80 + 100 + 40 = 220, average 55, top: wash (3)
+  --   Kofi:  S1 1 + S6 1 = 2 services, 140, average 70, top: cut (tie on times, more revenue)
+  --   repeat customers: C1 and C2 in the week; only C2 bought before it -> 1 / 2 = 0.5
+  --   previous week: revenue 140, sales 2, services 2, customers 2 (C2 + 1 walk-in), average 70
+  --   January 2000: 395 + 100 (S7) = 495; previous 31 days (December 1999) = 140
+  -- ---------------------------------------------------------------------------
+  perform pg_temp.as_db_owner();
+  insert into public.customers (phone, full_name) values ('+233209998001', 'Report C1') returning id into v_c1;
+  insert into public.customers (phone, full_name) values ('+233209998002', 'Report C2') returning id into v_c2;
+  insert into public.customers (phone, full_name) values ('+233209998003', 'Report C3') returning id into v_c3;
+
+  perform pg_temp.add_sale('1999-12-30 10:00+00', v_owner, v_c2,
+    jsonb_build_array(jsonb_build_object('service', v_cut, 'name', 'Test cut', 'staff', v_kofi, 'list', 10000, 'unit', 10000)),
+    '[{"method": "cash", "amount": 10000}]');
+  perform pg_temp.add_sale('1999-12-31 10:00+00', v_owner, null,
+    jsonb_build_array(jsonb_build_object('service', v_wash, 'name', 'Test wash', 'staff', v_kwame, 'list', 4000, 'unit', 4000)),
+    '[{"method": "cash", "amount": 4000}]');
+  perform pg_temp.add_sale('2000-01-03 10:00+00', v_counter, v_c1,
+    jsonb_build_array(jsonb_build_object('service', v_cut, 'name', 'Test cut', 'staff', v_kofi, 'list', 10000, 'unit', 10000)),
+    '[{"method": "cash", "amount": 10000}]');
+  perform pg_temp.add_sale('2000-01-03 15:00+00', v_counter, null,
+    jsonb_build_array(jsonb_build_object('service', v_wash, 'name', 'Test wash', 'staff', v_kwame, 'list', 4500, 'unit', 4000, 'qty', 2)),
+    '[{"method": "momo", "amount": 8000}]');
+  perform pg_temp.add_sale('2000-01-05 11:00+00', v_owner, v_c2,
+    jsonb_build_array(jsonb_build_object('service', v_cut, 'name', 'Test cut', 'staff', v_kwame, 'list', 10000, 'unit', 10000),
+                      jsonb_build_object('name', 'Hair oil', 'list', 3500, 'unit', 3500)),
+    '[{"method": "cash", "amount": 10000}, {"method": "card", "amount": 3500}]', null, false, true);
+  v_s4 := pg_temp.add_sale('2000-01-07 18:00+00', v_owner, v_c1,
+    jsonb_build_array(jsonb_build_object('service', v_wash, 'name', 'Test wash', 'staff', v_kofi, 'list', 4000, 'unit', 4000)),
+    '[{"method": "cash", "amount": 4000}]');
+  v_s5 := pg_temp.add_sale('2000-01-08 12:00+00', v_owner, v_c3,
+    jsonb_build_array(jsonb_build_object('service', v_cut, 'name', 'Test cut', 'staff', v_kofi, 'list', 10000, 'unit', 10000)),
+    '[{"method": "cash", "amount": 10000}]');
+  perform pg_temp.add_sale('2000-01-09 23:59:30+00', v_owner, v_c2,
+    jsonb_build_array(jsonb_build_object('service', v_wash, 'name', 'Test wash', 'staff', v_kofi, 'list', 4000, 'unit', 4000)),
+    '[{"method": "cash", "amount": 4000}]', '2000-01-10 08:00+00', true);
+  perform pg_temp.add_sale('2000-01-10 00:00:30+00', v_owner, null,
+    jsonb_build_array(jsonb_build_object('service', v_cut, 'name', 'Test cut', 'staff', v_kofi, 'list', 10000, 'unit', 10000)),
+    '[{"method": "cash", "amount": 10000}]');
+  insert into public.void_requests (sale_id, requested_by, reason, created_at)
+    values (v_s4, v_counter, 'Test request', '2000-01-07 19:00+00');
+  insert into public.day_closes (business_date, opening_float, expected_cash, counted_cash, cash_difference,
+                                 expected_momo, expected_card, sales_count, closed_by, closed_at)
+    values ('2000-01-03', 20000, 30000, 29500, -500, 8000, 0, 2, v_counter, '2000-01-03 20:00+00');
+  set constraints all immediate;
+  set constraints all deferred;
+
+  v_message := pg_temp.run_as(v_owner, format($q$ select public.reassign_sale_item_staff(
+    (select id from public.sale_items where sale_id = %L), %L, 'Test reassign') $q$, v_s4, v_kwame));
+  v_message := v_message || '/' || pg_temp.run_as(v_owner, format($q$ select public.void_sale(%L, 'Test void') $q$, v_s5));
+  perform pg_temp.expect(v_message = 'OK/OK', 'report fixtures: S4 reassigned and S5 voided', v_message);
+
+  v_report := pg_temp.call_as(v_owner, $q$ select public.report_summary('2000-01-03', '2000-01-09') $q$);
+  perform pg_temp.expect(v_report -> 'current' @> '{"revenue": 39500, "sales_count": 5, "services_count": 6, "customers_served": 3, "average_sale": 7900}'
+    and v_report -> 'previous' @> '{"revenue": 14000, "sales_count": 2, "services_count": 2, "customers_served": 2, "average_sale": 7000}'
+    and v_report ->> 'previous_from' = '1999-12-27' and v_report ->> 'previous_to' = '2000-01-02',
+    'report_summary: the sample week and the week before match the hand calculation (voided sale excluded)', v_report::text);
+
+  v_report := pg_temp.call_as(v_owner, $q$ select public.report_by_payment_method('2000-01-03', '2000-01-09') $q$);
+  perform pg_temp.expect(v_report = '[{"method": "cash", "amount": 28000, "sales_count": 4}, {"method": "momo", "amount": 8000, "sales_count": 1},
+                                      {"method": "card", "amount": 3500, "sales_count": 1}, {"method": "other", "amount": 0, "sales_count": 0}]'::jsonb,
+    'report_by_payment_method: cash 280, MoMo 80, card 35, adding up to the revenue', v_report::text);
+
+  v_report := pg_temp.call_as(v_owner, $q$ select public.report_by_staff('2000-01-03', '2000-01-09') $q$);
+  perform pg_temp.expect(
+    v_report -> 0 @> jsonb_build_object('staff_id', v_kwame, 'services', 4, 'revenue', 22000, 'average_per_service', 5500,
+                                        'top_service', jsonb_build_object('name', 'Test wash', 'times', 3))
+    and v_report -> 1 @> jsonb_build_object('staff_id', v_kofi, 'services', 2, 'revenue', 14000, 'average_per_service', 7000,
+                                            'top_service', jsonb_build_object('name', 'Test cut', 'times', 1))
+    and jsonb_array_length(v_report) = 2,
+    'report_by_staff: the reassigned line counts for Kwame only; the custom item has no staff', v_report::text);
+
+  v_report := pg_temp.call_as(v_owner, $q$ select public.report_by_service('2000-01-03', '2000-01-09') $q$);
+  perform pg_temp.expect(v_report @> jsonb_build_array(
+      jsonb_build_object('service_id', v_cut, 'times', 2, 'revenue', 20000, 'custom', false),
+      jsonb_build_object('service_id', v_wash, 'times', 4, 'revenue', 16000, 'custom', false),
+      '{"name": "Hair oil", "custom": true, "times": 1, "revenue": 3500, "category": "Custom items"}'::jsonb)
+    and jsonb_array_length(v_report) = 3,
+    'report_by_service: services by their own row, custom items apart', v_report::text);
+
+  v_report := pg_temp.call_as(v_owner, $q$ select public.report_by_category('2000-01-03', '2000-01-09') $q$);
+  perform pg_temp.expect(v_report @> jsonb_build_array(
+      jsonb_build_object('category_id', v_category, 'times', 6, 'revenue', 36000),
+      '{"name": "Custom items", "times": 1, "revenue": 3500}'::jsonb)
+    and jsonb_array_length(v_report) = 2,
+    'report_by_category: the category and the custom items', v_report::text);
+
+  v_report := pg_temp.call_as(v_owner, $q$ select public.report_by_channel('2000-01-03', '2000-01-09') $q$);
+  perform pg_temp.expect(v_report = '[{"channel": "walk_in", "sales_count": 5, "revenue": 39500},
+                                      {"channel": "online_booking", "sales_count": 0, "revenue": 0},
+                                      {"channel": "phone_booking", "sales_count": 0, "revenue": 0}]'::jsonb,
+    'report_by_channel: every channel, with zeros', v_report::text);
+
+  v_report := pg_temp.call_as(v_owner, $q$ select public.report_by_day('2000-01-03', '2000-01-09') $q$);
+  perform pg_temp.expect(jsonb_array_length(v_report) = 7
+    and v_report -> 0 = '{"date": "2000-01-03", "revenue": 18000, "sales_count": 2, "services_count": 3}'::jsonb
+    and v_report -> 1 = '{"date": "2000-01-04", "revenue": 0, "sales_count": 0, "services_count": 0}'::jsonb
+    and v_report -> 5 @> '{"date": "2000-01-08", "revenue": 0}'::jsonb
+    and v_report -> 6 @> '{"date": "2000-01-09", "revenue": 4000, "sales_count": 1}'::jsonb,
+    'report_by_day: one row per day; the voided Saturday is empty; the backdated 23:59 sale lands on Sunday', v_report::text);
+  v_report := pg_temp.call_as(v_owner, $q$ select public.report_summary('2000-01-10', '2000-01-16') $q$);
+  perform pg_temp.expect(v_report -> 'current' @> '{"revenue": 10000, "sales_count": 1}',
+    'day and week boundaries: a sale at 00:00:30 on Monday belongs to the next week', v_report::text);
+  v_report := pg_temp.call_as(v_owner, $q$ select public.report_summary('2000-01-01', '2000-01-31') $q$);
+  perform pg_temp.expect(v_report -> 'current' @> '{"revenue": 49500, "sales_count": 6}'
+    and v_report -> 'previous' @> '{"revenue": 14000}' and v_report ->> 'previous_from' = '1999-12-01',
+    'month boundary: January 2000 against the previous 31 days (December 1999)', v_report::text);
+
+  v_report := pg_temp.call_as(v_owner, $q$ select public.report_by_weekday('2000-01-03', '2000-01-09') $q$);
+  perform pg_temp.expect(v_report -> 0 @> '{"weekday": 1, "name": "Monday", "days": 1, "revenue": 18000}'
+    and v_report -> 5 @> '{"weekday": 6, "name": "Saturday", "revenue": 0}' and jsonb_array_length(v_report) = 7,
+    'report_by_weekday: Monday to Sunday with how many of each day the period has', v_report::text);
+
+  v_report := pg_temp.call_as(v_owner, $q$ select public.report_repeat_customers('2000-01-03', '2000-01-09') $q$);
+  perform pg_temp.expect(v_report = '{"identified": 2, "repeat": 1, "rate": 0.5000}'::jsonb,
+    'report_repeat_customers: 1 of 2 identified customers had bought before (hand-checked)', v_report::text);
+
+  v_report := pg_temp.call_as(v_owner, $q$ select jsonb_build_object(
+    'voids', public.report_voids('2000-01-03', '2000-01-09'),
+    'backdated', public.report_backdated('2000-01-03', '2000-01-09'),
+    'after_close', public.report_after_close('2000-01-03', '2000-01-09'),
+    'requests', public.report_void_requests('2000-01-03', '2000-01-09'),
+    'closes', public.report_day_close('2000-01-03', '2000-01-09')) $q$);
+  perform pg_temp.expect(jsonb_array_length(v_report -> 'voids') = 1 and v_report -> 'voids' -> 0 ->> 'sale_id' = v_s5::text
+    and (v_report -> 'voids' -> 0 ->> 'sold_in_period')::boolean and v_report -> 'voids' -> 0 ->> 'voided_by' = 'Test Owner'
+    and jsonb_array_length(v_report -> 'backdated') = 1 and v_report -> 'backdated' -> 0 ->> 'business_date' = '2000-01-09'
+    and jsonb_array_length(v_report -> 'after_close') = 1 and (v_report -> 'after_close' -> 0 ->> 'total')::integer = 13500
+    and jsonb_array_length(v_report -> 'requests') = 1
+    and v_report -> 'requests' -> 0 @> '{"status": "pending", "requested_by": "Test Counter", "reason": "Test request"}'
+    and jsonb_array_length(v_report -> 'closes') = 1
+    and v_report -> 'closes' -> 0 @> '{"business_date": "2000-01-03", "cash_difference": -500, "active": true}',
+    'voids, backdated, after-close, void requests, and day closes for the week', left(v_report::text, 300));
+
+  v_report := pg_temp.call_as(v_owner, $q$ select public.report_by_counter_user('2000-01-03', '2000-01-09') $q$);
+  perform pg_temp.expect(v_report @> jsonb_build_array(jsonb_build_object(
+      'user_id', v_counter, 'role', 'counter', 'sales_count', 2, 'revenue', 18000, 'overrides', 1, 'void_requests', 1)),
+    'report_by_counter_user: the counter''s sales, revenue, overrides, and void requests', v_report::text);
+
+  v_report := pg_temp.call_as(v_owner, format($q$ select public.report_changes('%s', '%s') $q$, private.accra_today(), private.accra_today()));
+  perform pg_temp.expect(exists (select 1 from jsonb_array_elements(v_report -> 'rows') r
+                                 where r ->> 'action' = 'staff_reassigned' and r ->> 'reason' = 'Test reassign'),
+    'report_changes: today''s change log includes the reassignment', left(v_report::text, 300));
+
+  -- The day report: the owner any day; the counter only after that day is closed.
+  v_report := pg_temp.call_as(v_counter, $q$ select public.report_day_close_export('2000-01-03') $q$);
+  perform pg_temp.expect(v_report -> 'figures' @> '{"revenue": 18000, "sales_count": 2}'
+    and jsonb_array_length(v_report -> 'sales') = 2 and jsonb_array_length(v_report -> 'day_closes') = 1,
+    'report_day_close_export: the counter gets the report of a closed day', left(v_report::text, 300));
+  v_message := pg_temp.run_as(v_counter, $q$ select public.report_day_close_export('2000-01-05') $q$);
+  perform pg_temp.expect(v_message = 'not_closed', 'report_day_close_export: the counter gets nothing for a day that is not closed', v_message);
+  v_report := pg_temp.call_as(v_owner, $q$ select public.report_day_close_export('2000-01-05') $q$);
+  perform pg_temp.expect(v_report -> 'figures' @> '{"revenue": 13500}', 'report_day_close_export: the owner gets any day', left(v_report::text, 300));
+
+  -- Owner only, and sane ranges.
+  v_message := pg_temp.run_as(v_counter, $q$ select public.report_summary('2000-01-03', '2000-01-09') $q$)
+    || '/' || pg_temp.run_as(v_counter, $q$ select public.report_by_staff('2000-01-03', '2000-01-09') $q$)
+    || '/' || pg_temp.run_as(v_counter, $q$ select public.report_by_counter_user('2000-01-03', '2000-01-09') $q$)
+    || '/' || pg_temp.run_as(v_counter, $q$ select public.report_changes('2000-01-03', '2000-01-09') $q$)
+    || '/' || pg_temp.run_as(v_counter, $q$ select public.report_day_close('2000-01-03', '2000-01-09') $q$);
+  perform pg_temp.expect(v_message = 'not_authorized/not_authorized/not_authorized/not_authorized/not_authorized',
+    'every report function refuses a counter user', v_message);
+  perform pg_temp.expect(pg_temp.run_as(null, $q$ select public.report_summary('2000-01-03', '2000-01-09') $q$) like 'permission denied%'
+    and pg_temp.run_as(v_owner, $q$ select public.report_summary('2000-01-09', '2000-01-03') $q$) = 'invalid_input'
+    and pg_temp.run_as(v_owner, $q$ select public.report_summary('2000-01-01', '2003-01-01') $q$) = 'invalid_input',
+    'visitors are refused, and a backwards or over-long range is refused');
+  perform pg_temp.expect(pg_temp.run_as(v_owner, $q$ select private.r_summary('2000-01-03', '2000-01-09') $q$) like 'permission denied%',
+    'the private report builders cannot be called directly');
 
   -- Owner alerts are claimed once per occurrence (a rerun job or a retry
   -- cannot queue a second SMS for the same thing).
