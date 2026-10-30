@@ -4,24 +4,32 @@ Update this file whenever the current phase, active feature, or implementation s
 
 ## Current Phase
 
-- Phase 0: Foundation.
+- Phase 1: POS access.
 
 ## Current Goal
 
-- `02-database-schema.md`.
+- `03-pos-login.md`.
 
 ## Completed
 
 - **00 Project setup**: Next.js 16.4.3 (App Router, TypeScript strict, Tailwind v4, ESLint CLI), shadcn/ui (Radix base, `radix-nova` style) with the 12 listed components, Supabase JS + SSR, Zod, Lucide, Vitest. Scripts `lint`, `typecheck`, `test`, `build`. `lib/env.ts` + `lib/env.server.ts` validate env vars, checked at server start by `instrumentation.ts`. `.env.example`, `app/robots.ts` (disallows `/pos` and `/api`), placeholder `/` and `/pos`, folder skeleton, git with `main` and `dev`.
 - **01 Themes, fonts, brand wrappers**: Bebas Neue + Inter via `next/font` (`lib/fonts.ts`, `--font-display` / `--font-text`). `--site-*` and `--pos-*` tokens in `app/globals.css`, each scope also re-pointing shadcn's variables. **Two root layouts** (`app/(site)/layout.tsx` with `<html class="site">`, `app/pos/layout.tsx` with `<html class="pos">`, noindex) so portaled dialogs keep the theme; `app/global-not-found.tsx` (experimental `globalNotFound`) serves the 404. Wrappers: `SiteButton`, `SiteHeading`, `PaperSection`, `Container`, `Reveal` (scroll reveal); `PosButton`, `PosCard`, `KpiTile` (+ skeleton), `PageHeader`. Logo: `tools/assets/make-logo.mjs` cuts the circle out of the JPG into `public/brand/logo-crest.png` (transparent), `public/brand/logo-receipt.png` (B&W), `app/icon.png`, `app/apple-icon.png`. Temporary `/design-check` and `/pos/design-check` (remove in spec 37). Checked at 375/1280 (site) and 1280/768/375 (POS) in the browser; reduced motion verified in the compiled CSS only (not emulated).
+- **02 Database schema, functions, RLS, seed**: 7 migrations in `supabase/migrations` (all 22 tables, check constraints, `btree_gist` overlap constraint, receipt sequence, booking codes and tokens, append-only `audit_log`, never-delete guards on money tables, a deferred check that every sale's lines and payments equal its total, RLS on every table with explicit grants, column grants that hide staff phones and internal settings from visitors, `public_staff` / `public_studio_settings` views, storage buckets and policies). Functions: `create_sale`, `reassign_sale_item_staff`, `edit_sale_item`, `void_sale`, `request_void`, `cancel_void_request`, `decide_void_request`, `close_day`, `reopen_day`, `create_appointment`, `cancel_appointment`, `mark_no_show`, `remove_sample_data`. Applied to the development project; types in `lib/database.types.ts` (`npm run db:types`); clients in `lib/supabase/{client,server,admin}.ts` (admin is `server-only`). 58 SQL tests in `supabase/tests/database.test.sql` pass on the hosted project (`npm run test:db`, always rolled back) and offline in PGlite (`npm run test:db:local`, also part of `npm run test`). Public sign-ups **disabled** in Supabase Auth (verified: the sign-up API returns `signup_disabled`).
+
+## Development Database And Test Accounts
+
+- Development project: `bestman-luxe-studio` (ref `xpcsmqwdpswnvzyterwx`, eu-central-1, free plan). The CLI is linked (`npx supabase link --project-ref xpcsmqwdpswnvzyterwx`); `npm run db:push` applies new migrations.
+- **Test accounts**: `npm run db:seed` creates a test owner (`owner@bestman.test`) and a test counter (`counter@bestman.test`, "Abena (counter)") with the admin API, stores their passwords in `.env.local` (`DEV_OWNER_PASSWORD`, `DEV_COUNTER_PASSWORD`, gitignored), uploads the sample gallery photos, and runs `supabase/seed.sql`. It refuses to run unless `.env.local` has `SEED_TARGET=development`.
+- **Sample data** (all marked "(sample)"): the studio's 5 categories and 19 real services with placeholder prices, 4 staff, 18 customers with fake `020 000 01xx` numbers, about two weeks of sales with day closes, a voided sale, a backdated sale, a reassignment, a pending void request, and 10 appointments. Every row is registered in `private.sample_rows`. **Remove it before real use**: `npm run db:remove-sample` (keeps the service list; `select public.remove_sample_data(false)` also removes the services). Removal resets receipt numbers to `BLS-000001` when no sales remain.
+- **First production owner** (spec 03 / 38): create the user in the Supabase dashboard (Authentication → Users → Add user), then insert their profile: `insert into public.profiles (id, display_name, role) values ('<user id>', '<name>', 'owner');`. Counter accounts are created by the owner in POS Settings (spec 07).
 
 ## In Progress
 
-- None yet.
+- None.
 
 ## Next Up
 
-- `00-project-setup.md`, then `01-theme-fonts-and-tokens.md`, then `02-database-schema.md`.
+- `03-pos-login.md`, then `04-pos-shell.md`.
 
 ## Build Order
 
@@ -30,7 +38,7 @@ Specs live in `context/feature-specs/`. Build in order unless the developer says
 **Phase 0: Foundation**
 - [x] 00 Project setup
 - [x] 01 Two themes, fonts, and brand wrappers
-- [ ] 02 Database schema, functions, RLS, and seed data
+- [x] 02 Database schema, functions, RLS, and seed data
 
 **Phase 1: POS access**
 - [ ] 03 POS login (owner and counter accounts)
@@ -158,6 +166,11 @@ Resolve each before the spec shown in brackets. Record the answer in the relevan
 - **Two root layouts** (spec 01): the website and the POS each own `<html>`, because Radix dialogs/selects portal into `<body>` and must inherit the right theme. Moving between them is a full page load, which is fine (the site never links to the POS).
 - **POS radius**: use `rounded-[16px]` for cards; shadcn's radius scale is relative to `--radius` (10px in the POS), so `rounded-2xl` would be 18px.
 - **Git**: work is pushed to `dev` after each spec; the developer merges `dev` into `main` after review.
+- **Database tests without Docker** (spec 02): SQL tests run on the development project through `supabase db query --linked`, one transaction per file that always ends in a deliberate error (so everything rolls back), and offline in PGlite with a small stand-in for Supabase's `auth` and `storage` schemas.
+- **Deferred balance check** (spec 02): a constraint trigger refuses, at commit, any sale whose lines or payments do not add up to its total, whatever code path wrote it.
+- **Counter sales visibility** (spec 02): RLS lets a counter user read sales of the current business day (and past sales recorded today) only. Per-sale amounts stay visible to them because they ring up and reprint those receipts; money aggregates are owner-only.
+- **Owner alert occurrence keys** (review, 2026-10-30): `owner_alerts.occurrence_key` is unique, so a retried job or a re-close cannot queue or send the same alert twice.
+- **Review of 2026-10-30, not changed (with reasons)**: counter sale-detail without amounts (conflicts with the supported counter reprint; RLS already limits the counter to today); empty `SMS_MODE` in `.env.example` (an empty value fails the enum, the explicit `console` is correct); `--font-sans` to Geist (the project uses Inter); allowing `/pos` in robots.txt (spec 00 and the architecture require disallow; POS pages are also `noindex` and never linked); edits to `components/ui` (button default type, sheet scroll, tabs orientation) because generated shadcn files are never edited. Note: `components/ui/tabs.tsx` does not forward `orientation` to Radix, so vertical tabs need a wrapper; only horizontal tabs are used.
 
 ## What Changed From Context Version 1
 

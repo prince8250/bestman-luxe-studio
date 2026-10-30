@@ -14,6 +14,15 @@ Specs are built in order. Check `context/progress-tracker.md` for what exists be
 - `npm run test` (Vitest, single run). One file: `npx vitest run lib/env.test.ts`. Watch: `npm run test:watch`
 - `npm run build`
 
+Database (Supabase CLI is a dev dependency; the project is linked to the development project):
+
+- `npm run db:push` applies new migrations in `supabase/migrations` to the linked project. Never edit an applied migration; add a new one.
+- `npm run db:types` regenerates `lib/database.types.ts` after a schema change.
+- `npm run test:db` runs `supabase/tests/*.test.sql` on the linked project. Each file is one transaction that ends in a deliberate error, so it always rolls back and reports `ok` / `not ok` lines.
+- `npm run test:db:local` runs every migration, `seed.sql`, the SQL tests, and `remove_sample_data()` offline in PGlite. It is also part of `npm run test`.
+- `npm run db:seed` creates the test owner and counter accounts (passwords go to `.env.local`) and loads sample data. `npm run db:remove-sample` removes all sample data.
+- Ad-hoc SQL: `npx supabase db query --linked "select ..."`.
+
 A spec is not done until lint, typecheck, test, and build pass. The server validates env vars at start-up (`instrumentation.ts` → `lib/env.ts`) and refuses to start if a required one is missing. `NEXT_PUBLIC_*` values are inlined at build time, so they must be set when building.
 
 ## Git
