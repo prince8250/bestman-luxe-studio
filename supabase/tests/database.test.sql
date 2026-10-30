@@ -84,6 +84,8 @@ declare
   v_message text;
   v_sale2 uuid;
   v_request2 uuid;
+  v_sale3 uuid;
+  v_item3 uuid;
   v_count bigint;
   v_close jsonb;
   v_slot timestamptz := date_trunc('hour', now()) + interval '3 days';
@@ -635,6 +637,36 @@ begin
     'the counter sees the sale and their own requests, but no change history', left(v_result::text, 300));
   v_message := pg_temp.run_as(v_counter, format($q$ select public.sale_detail(%L) $q$, v_old_sale));
   perform pg_temp.expect(v_message = 'not_found', 'the counter cannot open a sale from two days ago', v_message);
+
+  -- Reassign staff and the "Changed" badge (spec 11).
+  v_result := pg_temp.call_as(v_counter, format($q$
+    select public.create_sale('{"client_request_id": "%s", "payments": [{"method": "cash", "amount": 4500}],
+      "items": [{"service_id": "%s", "staff_id": "%s", "unit_price": 4500, "quantity": 1}]}'::jsonb)
+  $q$, gen_random_uuid(), v_wash, v_kofi));
+  v_sale3 := (v_result ->> 'sale_id')::uuid;
+  perform pg_temp.as_db_owner();
+  select id into v_item3 from public.sale_items where sale_id = v_sale3;
+  perform pg_temp.expect(not (pg_temp.call_as(v_counter, format($q$ select public.sale_detail(%L) $q$, v_sale3)) ->> 'changed')::boolean,
+    'a new sale is not marked changed');
+  v_message := pg_temp.run_as(v_counter, format($q$ select public.reassign_sale_item_staff(%L, %L, 'Staff was busy') $q$, v_item3, v_kwame));
+  perform pg_temp.expect(v_message = 'OK', 'the counter reassigns a line on today''s sale', v_message);
+  perform pg_temp.expect(
+    (pg_temp.call_as(v_owner, format($q$ select public.search_sales('{"staff_id": "%s", "recorded_by": "%s", "limit": 100}'::jsonb) $q$, v_kwame, v_counter))
+       -> 'rows') @> jsonb_build_array(jsonb_build_object('id', v_sale3, 'changed', true))
+    and not ((pg_temp.call_as(v_owner, format($q$ select public.search_sales('{"staff_id": "%s", "recorded_by": "%s", "limit": 100}'::jsonb) $q$, v_kofi, v_counter))
+       -> 'rows') @> jsonb_build_array(jsonb_build_object('id', v_sale3))),
+    'after a reassignment the job counts for the new staff member, not the old one, and the sale is marked changed');
+  v_result := pg_temp.call_as(v_owner, format($q$ select public.sale_detail(%L) $q$, v_sale3));
+  perform pg_temp.expect((v_result -> 'lines' -> 0 ->> 'changed')::boolean and (v_result -> 'lines' -> 0 ->> 'staff_id')::uuid = v_kwame
+    and (v_result ->> 'total')::integer = 4500
+    and exists (select 1 from jsonb_array_elements(v_result -> 'history') h
+                where h ->> 'action' = 'staff_reassigned' and h -> 'before' ->> 'staff_name' = 'Test Kofi'
+                  and h -> 'after' ->> 'staff_name' = 'Test Kwame' and h ->> 'reason' = 'Staff was busy' and h ->> 'created_at' is not null),
+    'the history shows from, to, reason, and time, and the total is unchanged', left(v_result::text, 300));
+  v_message := pg_temp.run_as(v_counter, format($q$ select public.reassign_sale_item_staff(%L, %L, 'Again') $q$, v_item3, v_kwame));
+  perform pg_temp.expect(v_message = 'no_change', 'reassigning to the same staff member is refused', v_message);
+  v_message := pg_temp.run_as(v_owner, format($q$ select public.reassign_sale_item_staff((select id from public.sale_items where sale_id = %L limit 1), %L, 'x') $q$, v_sale2, v_kofi));
+  perform pg_temp.expect(v_message = 'sale_voided', 'a line on a voided sale cannot be reassigned', v_message);
 
   -- Owner alerts are claimed once per occurrence (a rerun job or a retry
   -- cannot queue a second SMS for the same thing).

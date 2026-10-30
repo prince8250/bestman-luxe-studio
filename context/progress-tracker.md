@@ -8,7 +8,7 @@ Update this file whenever the current phase, active feature, or implementation s
 
 ## Current Goal
 
-- `11-edit-sale-and-reassign-staff.md` (ask open question 10, staff pay, first).
+- `12-record-past-sale.md` (open question 15, internet and power at the studio, needs no code).
 
 ## Completed
 
@@ -32,6 +32,8 @@ Update this file whenever the current phase, active feature, or implementation s
 
 - **10 Sales history and voids**: `/pos/sales`. Owner: every sale, filters in the URL (dates: today, yesterday, this week, this month, last 30 days, custom; staff; payment method; channel; recorded by; status paid / voided / void requested), search by receipt number (`BLS-000213`, `bls213`, or `213`) or phone across all dates, totals for the whole filtered range (revenue, sales, voided count and amount, money per method; paid sales only), 50 per page, and a notice naming sales from other days that were voided during the dates shown (they count on the day they were sold). Counter: today's sales only, no totals and no per-sale amounts in the list. Table on a desktop, cards on a tablet or phone. Sale page `/pos/sales/[id]`: times (paid, recorded, business day), past-sale / after-close / voided / "Void requested" badges, who recorded it, customer, lines with staff and override reasons, payments with change and references, linked appointment, print count, void requests, and (owner only) the change history in plain sentences. Actions: Reprint (hidden frame, marked REPRINT), View receipt (`?from=sale` returns to the sale), owner Void (reason required), counter "Request void (the owner will approve)" and Withdraw, owner Approve / Reject (note required on reject) on the sale and on `/pos/sales/void-requests` (pending first, then the last 20 decisions; count shown on the Sales page). Find: a receipt number opens the sale (counter: today's only, else "ask the owner"). Migration `20261030210000`: `search_sales(filters)` and `sale_detail(sale_id)` (security definer, apply `private.can_see_sale`, money only for the owner); `receipt_data` / `record_receipt_print` now use the existing helper and the duplicate overload from spec 09 is dropped. Shared `components/pos/receipt/receipt-print-frame.tsx`. Database tests (95): a voided sale cannot be voided again, requested, or edited; reject keeps the sale with the note; approve uses the request's reason and the owner as `voided_by`; the counter's search has no money and no older sales; owner totals equal the rows and the methods add up; filters; history owner-only. Verified in the browser as the owner at 1280, 768, and 375px: Find "bls 143" opened BLS-000143; the developer approved the sample request (BLS-000143, from 29 Oct, now shown in the notice); void of BLS-000213 with a reason (blank refused) updated the list (revenue GHS 1,170 → 1,140, voided 1); 30-day voided filter (3 sales, GHS 310); a test request on BLS-000214 rejected with a note (blank refused). Not verified by hand: the counter's screens (request, withdraw, today-only list); the database tests cover their rules, and the developer can try them signed in as the counter.
 
+- **11 Reassign staff and edit a paid sale**: on the sale page each line has **Change staff** (counter: today's sales only; owner: any sale) with staff chips and quick reasons ("Staff was busy", "Customer changed preference", "Entered wrong staff") → `reassign_sale_item_staff`, and **Edit** (owner only): service (grouped by category, the price follows the new service), price, quantity, reason quick picks; when the total changes the dialog shows "Collect GHS X" or "Refund GHS X" with the method and an optional reference, and sends exactly that difference → `edit_sale_item` (which refuses any other amount). The Sales list has a quick **Change staff** on today's paid sales (icon in the table, text on cards; a sale with several lines asks which one). A **Changed** badge marks edited lines and sales (owner: links to the change history). Migration `20261030220000`: `private.line_changed` / `private.sale_changed` (a reassignment, price change, or service change in `audit_log`), and `search_sales` / `sale_detail` return the flags plus the line and staff ids. Database tests (101): a counter reassignment moves the job to the new staff member in `search_sales` (and out of the old one's), marks the sale changed, keeps the total, and the history shows from, to, reason, and time; same-staff and voided-sale reassignments are refused (earlier tests: counter refused on older days and for any edit; an edit that changes the total needs the exact money difference). Component test: the Edit dialog sends the exact difference and needs a reason. Verified in the browser as the owner at 1280, 768, and 375px on test sale BLS-000214: Hair Washing Kofi → Kwame ("Staff was busy"), P-Cut GHS 60 → 70 with GHS 10 cash collected (total 220 → 230, "Extra paid by Cash"), Pedicure Efua → Ama from the list's quick action; the history lists each change. Not verified by hand: the counter's Change staff (same screens; the database tests cover the counter's limits). Staff reports (spec 16) will read `sale_items.staff_id`, so a reassignment moves the job and its revenue there too.
+
 ## Development Database And Test Accounts
 
 - Development project: `bestman-luxe-studio` (ref `xpcsmqwdpswnvzyterwx`, eu-central-1, free plan). The CLI is linked (`npx supabase link --project-ref xpcsmqwdpswnvzyterwx`); `npm run db:push` applies new migrations.
@@ -45,7 +47,7 @@ Update this file whenever the current phase, active feature, or implementation s
 
 ## Next Up
 
-- `11-edit-sale-and-reassign-staff.md` (ask open question 10 first), then `12-record-past-sale.md`.
+- `12-record-past-sale.md`, then `13-customers.md`.
 
 ## Build Order
 
@@ -69,7 +71,7 @@ Specs live in `context/feature-specs/`. Build in order unless the developer says
 - [x] 08 New sale
 - [x] 09 Receipt printing
 - [x] 10 Sales history, voids, and void requests
-- [ ] 11 Reassign staff and edit a paid sale
+- [x] 11 Reassign staff and edit a paid sale
 - [ ] 12 Record a past sale (outage fallback)
 - [ ] 13 Customers
 
@@ -133,6 +135,7 @@ Specs live in `context/feature-specs/`. Build in order unless the developer says
 - **GitHub repo stays public** (developer's choice, 2026-10-30), although `code-standards.md` says private. No secrets are committed; `.env.local` is gitignored.
 - **8 Receipt printer**: 80mm thermal (model not known yet), 2 copies by default (developer, 2026-10-30). Setup steps in `docs/owner-guide-draft.md`.
 - **9 Customer phone at the counter**: optional, encouraged (developer, 2026-10-30).
+- **10 Staff pay**: not decided yet (developer, 2026-10-30). Default kept: v1 reports services done and revenue per staff member only; pay calculations stay in `later/` L4.
 - **12 Products**: sold occasionally, through the Custom item line (developer, 2026-10-30); stock stays in `later/` L6.
 - **Supabase**: new project `bestman-luxe-studio` (ref `xpcsmqwdpswnvzyterwx`, region Europe), the development database with sample data. "Automatically expose new tables" is off (migrations grant access explicitly) and automatic RLS is on. The other projects in the org (`luxe-studio`, `Maison`) are not used.
 
@@ -145,7 +148,6 @@ Resolve each before the spec shown in brackets. Record the answer in the relevan
 5. **Counter employees** [07] Resolved for now: the owner creates one account per employee in POS Settings when ready (developer, 2026-10-30); one close per day, shift hand-overs not tracked in v1. Original question: How many people will use the counter PC, and their names (one counter account each). Is there a regular hand-over between shifts during the day? (Default: one close per day; shift hand-overs not tracked in v1.)
 6. **Counter limits** [07, 08, 12] Resolved: use the defaults below, editable in POS Settings (developer, 2026-10-30). Original question: Maximum counter discount (default 20%), counter backdate limit (default 3 days), opening cash float (default: owner sets), cash difference tolerance (default GHS 0.00), alert threshold for overrides.
 7. **Owner alerts** [19] Owner's phone number, which alerts by SMS (default: all on), daily SMS cap (default 20).
-10. **Staff pay** [11, 16] Are staff paid per job or by percentage? If yes, `later/` L4 becomes important. (Default: v1 reports counts and revenue per staff only.)
 11. **Soft launch** [after 22] Start using the POS at the studio before the website is ready? (Default: yes; requires Supabase Pro and Vercel Pro from that point, see 13.)
 
 **Backups and hosting**

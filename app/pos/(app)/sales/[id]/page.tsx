@@ -8,7 +8,9 @@ import { PageHeader } from "@/components/brand-pos/page-header";
 import { PosButton } from "@/components/brand-pos/pos-button";
 import { PosCard } from "@/components/brand-pos/pos-card";
 import { OwnerOnly } from "@/components/pos/owner-only";
-import { SaleBadges } from "@/components/pos/sales/sale-badges";
+import { ChangeStaffButton } from "@/components/pos/sales/change-staff";
+import { EditLineButton } from "@/components/pos/sales/edit-line";
+import { Badge, SaleBadges } from "@/components/pos/sales/sale-badges";
 import {
   CancelRequestButton,
   DecideRequestButtons,
@@ -22,8 +24,9 @@ import { formatGhs } from "@/lib/money";
 import { formatPhone } from "@/lib/phone";
 import { describeHistory } from "@/lib/sales/describe";
 import { CHANNEL_LABEL, METHOD_LABEL, parseSaleDetail, type SaleDetail, type VoidRequest } from "@/lib/sales/history";
+import { loadServiceOptions, loadStaffOptions } from "@/lib/sales/options";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { formatAccraDateTime, formatBusinessDate } from "@/lib/time";
+import { accraDate, formatAccraDateTime, formatBusinessDate } from "@/lib/time";
 
 export const metadata: Metadata = { title: "Sale" };
 
@@ -48,6 +51,16 @@ export default async function SaleDetailPage({ params }: PageProps<"/pos/sales/[
   const pending = sale.void_requests.find((request) => request.status === "pending") ?? null;
   const decided = sale.void_requests.filter((request) => request.status !== "pending");
   const paid = sale.status === "paid";
+  const owner = user.role === "owner";
+
+  // Spec 11: the counter changes staff on today's sales only; the owner on any
+  // sale, and only the owner edits a paid line. The database checks both again.
+  const canReassign = paid && (can(user.role, "sale.reassignAny") || (can(user.role, "sale.reassignToday") && sale.business_date === accraDate()));
+  const canEdit = paid && can(user.role, "sale.editPaid");
+  const [staffOptions, serviceOptions] = await Promise.all([
+    canReassign ? loadStaffOptions(supabase) : [],
+    canEdit ? loadServiceOptions(supabase) : [],
+  ]);
 
   return (
     <main className="mx-auto w-full max-w-5xl flex-1 p-4 md:p-8">
@@ -62,7 +75,13 @@ export default async function SaleDetailPage({ params }: PageProps<"/pos/sales/[
         description={
           <span className="inline-flex flex-wrap items-center gap-1.5">
             {formatAccraDateTime(sale.paid_at)}
-            <SaleBadges status={sale.status} voidRequested={pending !== null} isBackdated={sale.is_backdated} afterClose={sale.after_close} />
+            <SaleBadges
+              status={sale.status}
+              voidRequested={pending !== null}
+              isBackdated={sale.is_backdated}
+              afterClose={sale.after_close}
+              changed={sale.changed}
+            />
           </span>
         }
         actions={
@@ -100,11 +119,19 @@ export default async function SaleDetailPage({ params }: PageProps<"/pos/sales/[
           <PosCard title="Services">
             <ul className="divide-y divide-pos-border">
               {sale.lines.map((line) => (
-                <li key={line.id} className="flex items-start justify-between gap-3 py-3 first:pt-0 last:pb-0">
-                  <div className="min-w-0">
-                    <p className="font-medium">
+                <li key={line.id} className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1 py-3 first:pt-0 last:pb-0">
+                  <div className="min-w-0 flex-1">
+                    <p className="flex flex-wrap items-center gap-1.5 font-medium">
                       {line.name}
-                      {line.custom && <span className="ml-2 rounded-md bg-pos-subtle px-1.5 py-0.5 text-xs text-pos-text-muted">Custom</span>}
+                      {line.custom && <Badge tone="muted">Custom</Badge>}
+                      {line.changed &&
+                        (owner ? (
+                          <a href="#history" className="rounded-md focus-visible:outline-2 focus-visible:outline-pos-accent">
+                            <Badge tone="accent">Changed</Badge>
+                          </a>
+                        ) : (
+                          <Badge tone="accent">Changed</Badge>
+                        ))}
                     </p>
                     <p className="text-sm text-pos-text-muted">
                       {line.staff_name ? `Done by ${line.staff_name}` : "No staff"}
@@ -118,6 +145,34 @@ export default async function SaleDetailPage({ params }: PageProps<"/pos/sales/[
                     )}
                   </div>
                   <p className="shrink-0 font-medium tabular-nums">{formatGhs(line.line_total)}</p>
+                  {(canReassign || canEdit) && (
+                    <div className="-ml-3 flex w-full flex-wrap gap-1">
+                      {canReassign && (
+                        <ChangeStaffButton
+                          receiptNo={sale.receipt_no}
+                          lines={[{ id: line.id, name: line.name, staffId: line.staff_id, staffName: line.staff_name }]}
+                          staff={staffOptions}
+                        />
+                      )}
+                      {canEdit && (
+                        <EditLineButton
+                          receiptNo={sale.receipt_no}
+                          saleTotal={sale.total}
+                          services={serviceOptions}
+                          line={{
+                            id: line.id,
+                            name: line.name,
+                            custom: line.custom,
+                            serviceId: line.service_id,
+                            staffId: line.staff_id,
+                            quantity: line.quantity,
+                            unitPrice: line.unit_price,
+                            lineTotal: line.line_total,
+                          }}
+                        />
+                      )}
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>
@@ -160,7 +215,7 @@ export default async function SaleDetailPage({ params }: PageProps<"/pos/sales/[
           </PosCard>
 
           {sale.history && (
-            <PosCard title="Change history">
+            <PosCard title="Change history" id="history" className="scroll-mt-24">
               {sale.history.length === 0 ? (
                 <p className="text-sm text-pos-text-muted">No changes since the sale was made.</p>
               ) : (

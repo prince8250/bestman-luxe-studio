@@ -12,6 +12,7 @@ import { can } from "@/lib/auth/permissions";
 import { pageAccess } from "@/lib/auth/require-pos-user";
 import { formatGhs } from "@/lib/money";
 import { METHOD_LABEL, METHODS, PAGE_SIZE, parseSalesQuery, parseSearchResult, salesHref } from "@/lib/sales/history";
+import { loadStaffOptions } from "@/lib/sales/options";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { accraDate, accraDayStart, addDays, formatBusinessDate } from "@/lib/time";
 
@@ -29,7 +30,7 @@ export default async function SalesPage({ searchParams }: PageProps<"/pos/sales"
   const query = parseSalesQuery(await searchParams, today);
   const supabase = await createSupabaseServerClient();
   const dates = query.dates;
-  const [search, staff, accounts, pending, voidedElsewhere] = await Promise.all([
+  const [search, staff, accounts, pending, voidedElsewhere, staffOptions] = await Promise.all([
     supabase.rpc("search_sales", { p_filters: query.filters }),
     owner ? supabase.from("staff").select("id, name, archived_at").order("name") : null,
     owner ? supabase.from("profiles").select("id, display_name").order("display_name") : null,
@@ -47,6 +48,8 @@ export default async function SalesPage({ searchParams }: PageProps<"/pos/sales"
           .order("voided_at", { ascending: false })
           .limit(10)
       : null,
+    // For the quick "Change staff" on today's sales (spec 11).
+    loadStaffOptions(supabase),
   ]);
   if (search.error) throw new Error(`search_sales failed: ${search.error.message}`);
   const result = parseSearchResult(search.data);
@@ -143,7 +146,7 @@ export default async function SalesPage({ searchParams }: PageProps<"/pos/sales"
           </p>
         </div>
       ) : (
-        <SalesTable rows={result.rows} owner={owner} showDate={!oneDay} />
+        <SalesTable rows={result.rows} owner={owner} showDate={!oneDay} today={today} staff={staffOptions} />
       )}
 
       {result.count > PAGE_SIZE && (

@@ -64,6 +64,64 @@ export async function cancelVoidRequestAction(requestId: string): Promise<Action
   });
 }
 
+// Spec 11: change who did a line. Counter: today's sales only; owner: any
+// day (reassign_sale_item_staff checks the window again). The total, the
+// receipt number, and the payments never change.
+export async function reassignStaffAction(itemId: string, staffId: string, rawReason: string): Promise<ActionResult> {
+  return runPosAction("sale.reassignToday", async () => {
+    const parsed = z.object({ itemId: id, staffId: id, reason }).safeParse({ itemId, staffId, reason: rawReason });
+    if (!parsed.success) return fail(firstIssue(parsed.error));
+
+    const supabase = await createSupabaseServerClient();
+    const { error } = await supabase.rpc("reassign_sale_item_staff", {
+      p_item_id: parsed.data.itemId,
+      p_new_staff_id: parsed.data.staffId,
+      p_reason: parsed.data.reason,
+    });
+    if (error) return fail(dbErrorMessage(error, "reassign_sale_item_staff failed"));
+    refresh();
+    return ok(undefined);
+  });
+}
+
+const editSchema = z.object({
+  itemId: id,
+  serviceId: id.nullable(),
+  unitPrice: z.number().int().min(0).max(100_000_000),
+  quantity: z.number().int().min(1).max(20),
+  reason,
+  adjustment: z
+    .object({
+      method: z.enum(["cash", "momo", "card", "other"]),
+      amount: z.number().int().min(-100_000_000).max(100_000_000),
+      reference: z.string().trim().max(60),
+    })
+    .nullable(),
+});
+
+// Spec 11, owner only: change a paid line's service, price, or quantity.
+// When the total changes, the money collected or refunded is recorded in the
+// same transaction (edit_sale_item checks it equals the difference exactly).
+export async function editSaleItemAction(input: z.input<typeof editSchema>): Promise<ActionResult> {
+  return runPosAction("sale.editPaid", async () => {
+    const parsed = editSchema.safeParse(input);
+    if (!parsed.success) return fail(firstIssue(parsed.error));
+    const { itemId, serviceId, unitPrice, quantity, adjustment } = parsed.data;
+
+    const supabase = await createSupabaseServerClient();
+    const { error } = await supabase.rpc("edit_sale_item", {
+      p_item_id: itemId,
+      p_changes: { ...(serviceId ? { service_id: serviceId } : {}), unit_price: unitPrice, quantity },
+      // null: the total does not change, so no money moves.
+      p_payment_adjustment: adjustment,
+      p_reason: parsed.data.reason,
+    });
+    if (error) return fail(dbErrorMessage(error, "edit_sale_item failed"));
+    refresh();
+    return ok(undefined);
+  });
+}
+
 export async function decideVoidRequestAction(requestId: string, approve: boolean, rawNote: string): Promise<ActionResult> {
   return runPosAction("sale.decideVoid", async () => {
     const parsed = z.object({ requestId: id, approve: z.boolean(), note }).safeParse({ requestId, approve, note: rawNote });

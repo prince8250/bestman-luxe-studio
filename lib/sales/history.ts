@@ -162,8 +162,10 @@ const saleRowSchema = z.object({
   receipt_no: z.string(),
   paid_at: z.string(),
   recorded_at: z.string(),
+  business_date: z.string(),
   status: z.enum(["paid", "voided"]),
   void_requested: z.boolean(),
+  changed: z.boolean(),
   total: z.number().int().nullable(),
   customer_name: z.string().nullable(),
   customer_phone: z.string().nullable(),
@@ -171,7 +173,15 @@ const saleRowSchema = z.object({
   is_backdated: z.boolean(),
   after_close: z.boolean(),
   recorded_by: z.string().nullable(),
-  items: z.array(z.object({ name: z.string(), quantity: z.number().int(), staff_name: z.string().nullable() })),
+  items: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      quantity: z.number().int(),
+      staff_id: z.string().nullable(),
+      staff_name: z.string().nullable(),
+    }),
+  ),
   methods: z.array(methodSchema),
 });
 
@@ -241,6 +251,7 @@ const saleDetailSchema = z.object({
   voided_by: z.string().nullable(),
   void_reason: z.string().nullable(),
   prints: z.number().int(),
+  changed: z.boolean(),
   lines: z.array(
     z.object({
       id: z.string(),
@@ -252,7 +263,10 @@ const saleDetailSchema = z.object({
       unit_price: z.number().int(),
       line_total: z.number().int(),
       reason: z.string().nullable(),
+      service_id: z.string().nullable(),
+      staff_id: z.string().nullable(),
       staff_name: z.string().nullable(),
+      changed: z.boolean(),
     }),
   ),
   payments: z.array(
@@ -279,6 +293,7 @@ const saleDetailSchema = z.object({
 });
 
 export type SaleDetail = z.infer<typeof saleDetailSchema>;
+export type SaleLine = SaleDetail["lines"][number];
 export type VoidRequest = z.infer<typeof voidRequestSchema>;
 export type HistoryEntry = z.infer<typeof historySchema>;
 
