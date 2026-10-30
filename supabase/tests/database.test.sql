@@ -452,6 +452,17 @@ begin
     'the same alert occurrence is queued only once');
   perform pg_temp.expect((select count(*) from public.owner_alerts where kind = 'void_requested' and sale_id = v_sale) = 1,
     'sale alerts stay at most one per kind per sale');
+
+  -- Rate limits (spec 03 sign-in throttle, spec 34 bookings): service role only.
+  v_count := public.rate_limit_hit('test:key', 900);
+  v_count := v_count * 10 + public.rate_limit_hit('test:key', 900);
+  v_count := v_count * 10 + public.rate_limit_count('test:key', 900);
+  perform pg_temp.expect(v_count = 122, 'rate_limit_hit counts attempts in the current window (1, 2, then count 2)', v_count::text);
+  perform public.rate_limit_clear('test:key');
+  perform pg_temp.expect(public.rate_limit_count('test:key', 900) = 0, 'rate_limit_clear forgets a key');
+  perform pg_temp.expect(pg_temp.run_as(null, $q$ select public.rate_limit_hit('x', 900) $q$) like 'permission denied%'
+    and pg_temp.run_as(v_counter, $q$ select public.rate_limit_clear('x') $q$) like 'permission denied%',
+    'visitors and POS users cannot touch the rate-limit counters');
 end;
 $test$;
 

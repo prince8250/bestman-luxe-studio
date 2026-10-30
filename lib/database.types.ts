@@ -1292,6 +1292,15 @@ export type Database = {
         Returns: Json
       }
       mark_no_show: { Args: { p_appointment_id: string }; Returns: undefined }
+      rate_limit_clear: { Args: { p_key: string }; Returns: undefined }
+      rate_limit_count: {
+        Args: { p_key: string; p_window_seconds: number }
+        Returns: number
+      }
+      rate_limit_hit: {
+        Args: { p_key: string; p_window_seconds: number }
+        Returns: number
+      }
       reassign_sale_item_staff: {
         Args: { p_item_id: string; p_new_staff_id: string; p_reason: string }
         Returns: undefined

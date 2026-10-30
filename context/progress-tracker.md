@@ -8,13 +8,15 @@ Update this file whenever the current phase, active feature, or implementation s
 
 ## Current Goal
 
-- `03-pos-login.md`.
+- `04-pos-shell.md`.
 
 ## Completed
 
 - **00 Project setup**: Next.js 16.4.3 (App Router, TypeScript strict, Tailwind v4, ESLint CLI), shadcn/ui (Radix base, `radix-nova` style) with the 12 listed components, Supabase JS + SSR, Zod, Lucide, Vitest. Scripts `lint`, `typecheck`, `test`, `build`. `lib/env.ts` + `lib/env.server.ts` validate env vars, checked at server start by `instrumentation.ts`. `.env.example`, `app/robots.ts` (disallows `/pos` and `/api`), placeholder `/` and `/pos`, folder skeleton, git with `main` and `dev`.
 - **01 Themes, fonts, brand wrappers**: Bebas Neue + Inter via `next/font` (`lib/fonts.ts`, `--font-display` / `--font-text`). `--site-*` and `--pos-*` tokens in `app/globals.css`, each scope also re-pointing shadcn's variables. **Two root layouts** (`app/(site)/layout.tsx` with `<html class="site">`, `app/pos/layout.tsx` with `<html class="pos">`, noindex) so portaled dialogs keep the theme; `app/global-not-found.tsx` (experimental `globalNotFound`) serves the 404. Wrappers: `SiteButton`, `SiteHeading`, `PaperSection`, `Container`, `Reveal` (scroll reveal); `PosButton`, `PosCard`, `KpiTile` (+ skeleton), `PageHeader`. Logo: `tools/assets/make-logo.mjs` cuts the circle out of the JPG into `public/brand/logo-crest.png` (transparent), `public/brand/logo-receipt.png` (B&W), `app/icon.png`, `app/apple-icon.png`. Temporary `/design-check` and `/pos/design-check` (remove in spec 37). Checked at 375/1280 (site) and 1280/768/375 (POS) in the browser; reduced motion verified in the compiled CSS only (not emulated).
 - **02 Database schema, functions, RLS, seed**: 7 migrations in `supabase/migrations` (all 22 tables, check constraints, `btree_gist` overlap constraint, receipt sequence, booking codes and tokens, append-only `audit_log`, never-delete guards on money tables, a deferred check that every sale's lines and payments equal its total, RLS on every table with explicit grants, column grants that hide staff phones and internal settings from visitors, `public_staff` / `public_studio_settings` views, storage buckets and policies). Functions: `create_sale`, `reassign_sale_item_staff`, `edit_sale_item`, `void_sale`, `request_void`, `cancel_void_request`, `decide_void_request`, `close_day`, `reopen_day`, `create_appointment`, `cancel_appointment`, `mark_no_show`, `remove_sample_data`. Applied to the development project; types in `lib/database.types.ts` (`npm run db:types`); clients in `lib/supabase/{client,server,admin}.ts` (admin is `server-only`). 58 SQL tests in `supabase/tests/database.test.sql` pass on the hosted project (`npm run test:db`, always rolled back) and offline in PGlite (`npm run test:db:local`, also part of `npm run test`). Public sign-ups **disabled** in Supabase Auth (verified: the sign-up API returns `signup_disabled`).
+
+- **03 POS login**: `/pos/login` (email + password, Supabase Auth through a server action), session refresh and signed-out redirect in `proxy.ts`, `getPosUser()` data access layer (`lib/auth/pos-user.ts`, active profile required), `sign_in_events` row on every sign-in (the sign-in is refused if it cannot be recorded), one generic error for every failure, failed attempts slowed after 3 and locked after 10 per email and per IP in 15-minute windows (`rate_limit_*` functions, migration `20261030130000`). Owner lands on `/pos`, counter on `/pos/sale/new`. Route groups: `app/pos/login` (public) and `app/pos/(app)` (signed-in; temporary top bar until spec 04). Verified in the browser by the developer: wrong password gives the generic error, owner and counter sign in to their home pages, a deactivated counter is refused, sign-out returns to the login page; `sign_in_events` rows checked in the database. Public sign-up stays disabled (spec 02).
 
 ## Development Database And Test Accounts
 
@@ -41,7 +43,7 @@ Specs live in `context/feature-specs/`. Build in order unless the developer says
 - [x] 02 Database schema, functions, RLS, and seed data
 
 **Phase 1: POS access**
-- [ ] 03 POS login (owner and counter accounts)
+- [x] 03 POS login (owner and counter accounts)
 - [ ] 04 POS shell, permissions, and Find
 
 **Phase 2: POS catalog and settings**
