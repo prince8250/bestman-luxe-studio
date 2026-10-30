@@ -82,15 +82,15 @@ export function CounterAccounts({ accounts }: { accounts: CounterAccountRow[] })
               </div>
               <div className="flex flex-wrap gap-1">
                 {account.active && (
-                  <>
-                    <PosButton variant="secondary" onClick={() => setDialog({ kind: "reset", account })}>
-                      <KeyRound /> New password
-                    </PosButton>
-                    <PosButton variant="ghost" onClick={() => setDialog({ kind: "signout", account })}>
-                      <LogOut /> Sign out everywhere
-                    </PosButton>
-                  </>
+                  <PosButton variant="secondary" onClick={() => setDialog({ kind: "reset", account })}>
+                    <KeyRound /> New password
+                  </PosButton>
                 )}
+                {/* Also for a deactivated account: if signing it out failed when it
+                    was deactivated, the owner is asked to press this. */}
+                <PosButton variant="ghost" onClick={() => setDialog({ kind: "signout", account })}>
+                  <LogOut /> Sign out everywhere
+                </PosButton>
                 <PosButton variant="ghost" onClick={() => setDialog({ kind: "active", account })}>
                   <Power /> {account.active ? "Deactivate" : "Reactivate"}
                 </PosButton>

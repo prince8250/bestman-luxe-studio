@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { describeHistory } from "./describe";
-import { datesFor, parseSalesQuery, parseSalesSearch, salesHref } from "./history";
+import { datesFor, isCalendarDate, parseSalesQuery, parseSalesSearch, salesHref } from "./history";
 
 const today = "2026-10-30"; // a Friday
 
@@ -92,5 +92,21 @@ describe("describeHistory", () => {
       }),
     ).toBe("Charged GHS 40.00 for Haircut instead of GHS 50.00");
     expect(describeHistory({ ...entry, action: "void_requested", before: null, after: null })).toBe("Asked the owner to void the sale");
+  });
+});
+
+describe("isCalendarDate", () => {
+  it("accepts real dates only", () => {
+    expect(isCalendarDate("2028-02-29")).toBe(true);
+    expect(isCalendarDate("2026-02-29")).toBe(false);
+    expect(isCalendarDate("2026-02-31")).toBe(false);
+    expect(isCalendarDate("2026-13-01")).toBe(false);
+    expect(isCalendarDate("2026-1-01")).toBe(false);
+  });
+
+  it("treats an impossible date in the link as empty, so the range falls back to today", () => {
+    const query = parseSalesQuery({ range: "custom", from: "2026-02-31", to: "2026-13-40" }, today);
+    expect(query.values.from).toBe("");
+    expect(query.filters).toMatchObject({ from: today, to: today });
   });
 });

@@ -162,7 +162,9 @@ export async function signOutCounterEverywhereAction(id: unknown): Promise<Actio
   });
 }
 
-// Deactivating also signs the account out everywhere at once.
+// Deactivating also signs the account out everywhere at once. Reactivating
+// first ends any sign-in left over from before (for example when ending them
+// failed at deactivation), so the person must sign in again.
 export async function setCounterActiveAction(id: unknown, active: unknown): Promise<ActionResult> {
   return runPosAction("accounts.manage", async (owner) => {
     const parsed = z.uuid().safeParse(id);
@@ -170,9 +172,10 @@ export async function setCounterActiveAction(id: unknown, active: unknown): Prom
     const account = await findCounterAccount(parsed.data);
     if (!account) return fail("That counter account was not found.");
 
+    if (active && !(await endSessions(account.id))) return fail("Could not reactivate the account. Try again.");
+
     const { error } = await createSupabaseAdminClient().from("profiles").update({ active }).eq("id", account.id);
     if (error) return fail("Could not save. Try again.");
-    // Reactivating has no sessions to end.
     const signedOut = active ? true : await endSessions(account.id);
     await logAccountChange(owner, account.id, active ? "account_reactivated" : "account_deactivated", {
       display_name: account.display_name,

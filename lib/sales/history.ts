@@ -59,7 +59,15 @@ export interface SalesQuery {
   dates: { from: string; to: string } | null;
 }
 
-const isoDate = /^\d{4}-\d{2}-\d{2}$/;
+// A real calendar date in YYYY-MM-DD form (2026-02-31 is refused, so a bad
+// link falls back to today instead of failing in the database).
+export function isCalendarDate(value: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return false;
+  const [year, month, day] = match.slice(1).map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
 const uuid = z.uuid();
 
 function one(value: string | string[] | undefined): string {
@@ -92,8 +100,8 @@ export function datesFor(range: RangePreset, today: string, from: string, to: st
     case "30d":
       return { from: addDays(today, -29), to: today };
     case "custom": {
-      const start = isoDate.test(from) ? from : today;
-      const end = isoDate.test(to) ? to : start;
+      const start = isCalendarDate(from) ? from : today;
+      const end = isCalendarDate(to) ? to : start;
       return start <= end ? { from: start, to: end } : { from: end, to: start };
     }
     default:
@@ -107,8 +115,8 @@ export function parseSalesQuery(params: Record<string, string | string[] | undef
   const range = pick(one(params.range), RANGE_PRESETS) || "today";
   const values: SalesFilterValues = {
     range,
-    from: isoDate.test(one(params.from)) ? one(params.from) : "",
-    to: isoDate.test(one(params.to)) ? one(params.to) : "",
+    from: isCalendarDate(one(params.from)) ? one(params.from) : "",
+    to: isCalendarDate(one(params.to)) ? one(params.to) : "",
     staff: uuid.safeParse(one(params.staff)).success ? one(params.staff) : "",
     method: pick(one(params.method), METHODS),
     channel: pick(one(params.channel), CHANNELS),
