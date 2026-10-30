@@ -5,6 +5,11 @@ import type { NextConfig } from "next";
 // makes a route dynamic) is simpler to reason about for access control.
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  experimental: {
+    // Two root layouts (website and POS) need a standalone 404 page:
+    // app/global-not-found.tsx.
+    globalNotFound: true,
+  },
   turbopack: {
     rules: {
       "*.css": {

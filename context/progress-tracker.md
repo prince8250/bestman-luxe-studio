@@ -8,11 +8,12 @@ Update this file whenever the current phase, active feature, or implementation s
 
 ## Current Goal
 
-- `01-theme-fonts-and-tokens.md`.
+- `02-database-schema.md`.
 
 ## Completed
 
 - **00 Project setup**: Next.js 16.4.3 (App Router, TypeScript strict, Tailwind v4, ESLint CLI), shadcn/ui (Radix base, `radix-nova` style) with the 12 listed components, Supabase JS + SSR, Zod, Lucide, Vitest. Scripts `lint`, `typecheck`, `test`, `build`. `lib/env.ts` + `lib/env.server.ts` validate env vars, checked at server start by `instrumentation.ts`. `.env.example`, `app/robots.ts` (disallows `/pos` and `/api`), placeholder `/` and `/pos`, folder skeleton, git with `main` and `dev`.
+- **01 Themes, fonts, brand wrappers**: Bebas Neue + Inter via `next/font` (`lib/fonts.ts`, `--font-display` / `--font-text`). `--site-*` and `--pos-*` tokens in `app/globals.css`, each scope also re-pointing shadcn's variables. **Two root layouts** (`app/(site)/layout.tsx` with `<html class="site">`, `app/pos/layout.tsx` with `<html class="pos">`, noindex) so portaled dialogs keep the theme; `app/global-not-found.tsx` (experimental `globalNotFound`) serves the 404. Wrappers: `SiteButton`, `SiteHeading`, `PaperSection`, `Container`, `Reveal` (scroll reveal); `PosButton`, `PosCard`, `KpiTile` (+ skeleton), `PageHeader`. Logo: `tools/assets/make-logo.mjs` cuts the circle out of the JPG into `public/brand/logo-crest.png` (transparent), `public/brand/logo-receipt.png` (B&W), `app/icon.png`, `app/apple-icon.png`. Temporary `/design-check` and `/pos/design-check` (remove in spec 37). Checked at 375/1280 (site) and 1280/768/375 (POS) in the browser; reduced motion verified in the compiled CSS only (not emulated).
 
 ## In Progress
 
@@ -28,7 +29,7 @@ Specs live in `context/feature-specs/`. Build in order unless the developer says
 
 **Phase 0: Foundation**
 - [x] 00 Project setup
-- [ ] 01 Two themes, fonts, and brand wrappers
+- [x] 01 Two themes, fonts, and brand wrappers
 - [ ] 02 Database schema, functions, RLS, and seed data
 
 **Phase 1: POS access**
@@ -105,6 +106,8 @@ Specs live in `context/feature-specs/`. Build in order unless the developer says
 - **Sample data must be very easy to remove** (developer, 2026-10-30): all sample rows are removable in one step before real use (see spec 02 notes when built).
 - **Dependencies**: the developer allowed adding dependencies as needed; each one is listed in the spec report (2026-10-30).
 - **Open questions are asked one by one** as their spec comes up (developer, 2026-10-30).
+- **GitHub repo stays public** (developer's choice, 2026-10-30), although `code-standards.md` says private. No secrets are committed; `.env.local` is gitignored.
+- **Supabase**: new project `bestman-luxe-studio` (ref `xpcsmqwdpswnvzyterwx`, region Europe), the development database with sample data. "Automatically expose new tables" is off (migrations grant access explicitly) and automatic RLS is on. The other projects in the org (`luxe-studio`, `Maison`) are not used.
 
 ## Open Questions
 
@@ -152,6 +155,8 @@ Resolve each before the spec shown in brackets. Record the answer in the relevan
 - **Next.js 16 Cache Components off** (spec 00). `create-next-app` 16.4 enables `cacheComponents` by default; it forces every session read behind a Suspense boundary. The POS is per-user and dynamic, so the classic model (cookies make a route dynamic) is used for simpler, safer access checks.
 - **shadcn/ui on the Radix base** (`radix-nova`), because the specs use the `asChild` pattern. shadcn's `cn` comes from its `cn` package (re-exported by `lib/utils.ts`).
 - **Env split**: `lib/env.ts` (schemas + public vars, safe anywhere) and `lib/env.server.ts` (`server-only`, secrets).
+- **Two root layouts** (spec 01): the website and the POS each own `<html>`, because Radix dialogs/selects portal into `<body>` and must inherit the right theme. Moving between them is a full page load, which is fine (the site never links to the POS).
+- **POS radius**: use `rounded-[16px]` for cards; shadcn's radius scale is relative to `--radius` (10px in the POS), so `rounded-2xl` would be 18px.
 - **Git**: work is pushed to `dev` after each spec; the developer merges `dev` into `main` after review.
 
 ## What Changed From Context Version 1
