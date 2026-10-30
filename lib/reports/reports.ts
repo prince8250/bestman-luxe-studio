@@ -315,12 +315,6 @@ export function reportDayCloseExport(supabase: Supabase, businessDate: string) {
   return call(supabase, "report_day_close_export", { p_business_date: businessDate }, dayReportSchema);
 }
 
-// Percent change from the previous period, rounded to one decimal; null when
-// there is nothing to compare with.
-export function percentChange(current: number, previous: number): number | null {
-  if (previous === 0) return null;
-  return Math.round(((current - previous) / previous) * 1000) / 10;
-}
 
 // The schemas, for tests that check them against real database output.
 export const reportSchemas = {

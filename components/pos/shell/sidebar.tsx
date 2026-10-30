@@ -34,7 +34,7 @@ export function Sidebar({ role, initialCollapsed, statusCard }: SidebarProps) {
   return (
     <aside
       data-collapsed={collapsed}
-      className="group/sidebar sticky top-0 hidden h-dvh shrink-0 flex-col border-r border-pos-border bg-pos-surface md:flex md:w-[76px] lg:w-60 lg:data-[collapsed=true]:w-[76px]"
+      className="group/sidebar sticky top-0 hidden h-dvh shrink-0 flex-col border-r border-pos-border bg-pos-surface md:flex md:w-[76px] lg:w-60 lg:data-[collapsed=true]:w-[76px] print:hidden"
     >
       <div className="flex h-16 items-center justify-center gap-2 px-4 lg:justify-between lg:group-data-[collapsed=true]/sidebar:justify-center">
         <Link

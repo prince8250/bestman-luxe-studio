@@ -9,7 +9,7 @@ import { SignOutButton } from "./sign-out-button";
 // account is signed in on the shared counter PC (ui-context.md, "Role Home Pages").
 export function TopBar({ user }: { user: PosUser }) {
   return (
-    <header className="sticky top-0 z-30 flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-pos-border bg-pos-surface/95 px-3 py-2 backdrop-blur-sm md:h-16 md:flex-nowrap md:px-6 md:py-0">
+    <header className="sticky top-0 z-30 flex flex-wrap print:hidden items-center gap-x-3 gap-y-2 border-b border-pos-border bg-pos-surface/95 px-3 py-2 backdrop-blur-sm md:h-16 md:flex-nowrap md:px-6 md:py-0">
       <Link href={homePathFor(user.role)} className="shrink-0 md:hidden" aria-label="Bestman POS home">
         <Image src="/brand/logo-receipt.png" alt="" width={36} height={36} className="h-9 w-9" />
       </Link>
