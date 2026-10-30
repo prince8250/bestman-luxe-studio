@@ -47,3 +47,6 @@ supabase/.branches/
 
 # local backups and scratch
 /backups-local/
+
+# Claude Code plugin state (not project files)
+**/.claude/autoharness/

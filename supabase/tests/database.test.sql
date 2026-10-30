@@ -82,6 +82,8 @@ declare
   v_item uuid;
   v_request uuid;
   v_message text;
+  v_sale2 uuid;
+  v_request2 uuid;
   v_count bigint;
   v_close jsonb;
   v_slot timestamptz := date_trunc('hour', now()) + interval '3 days';
@@ -563,6 +565,76 @@ begin
     'record_receipt_print numbers each print (1 = original, then reprints)', v_result::text);
   v_message := pg_temp.run_as(v_counter, format($q$ insert into public.receipt_prints (sale_id, printed_by) values (%L, %L) $q$, v_sale, v_counter));
   perform pg_temp.expect(v_message like 'permission denied%', 'nobody writes receipt_prints directly', v_message);
+
+  -- Sales history and voids (spec 10).
+  -- A voided sale cannot be voided again, edited, or get a new request.
+  perform pg_temp.expect(pg_temp.run_as(v_owner, format($q$ select public.void_sale(%L, 'again') $q$, v_sale)) = 'already_voided'
+    and pg_temp.run_as(v_counter, format($q$ select public.request_void(%L, 'again') $q$, v_sale)) = 'already_voided'
+    and pg_temp.run_as(v_owner, format($q$ select public.edit_sale_item((select id from public.sale_items where sale_id = %L limit 1),
+          '{"unit_price": 1}'::jsonb, null, 'test') $q$, v_sale)) = 'sale_voided',
+    'a voided sale cannot be voided again, get a void request, or be edited');
+
+  -- Reject keeps the sale and records the note; approve voids with the request's reason and the owner.
+  v_result := pg_temp.call_as(v_counter, format($q$
+    select public.create_sale('{"client_request_id": "%s", "payments": [{"method": "card", "amount": 4500}],
+      "items": [{"service_id": "%s", "staff_id": "%s", "unit_price": 4500, "quantity": 1}]}'::jsonb)
+  $q$, gen_random_uuid(), v_wash, v_kwame));
+  v_sale2 := (v_result ->> 'sale_id')::uuid;
+  v_request2 := (pg_temp.call_as(v_counter, format($q$ select to_jsonb(public.request_void(%L, 'Wrong service rung')) $q$, v_sale2)) #>> '{}')::uuid;
+  v_message := pg_temp.run_as(v_owner, format($q$ select public.decide_void_request(%L, false, null) $q$, v_request2));
+  perform pg_temp.expect(v_message = 'note_required', 'rejecting a void request needs a note', v_message);
+  perform pg_temp.run_as(v_owner, format($q$ select public.decide_void_request(%L, false, 'Customer was served') $q$, v_request2));
+  perform pg_temp.as_db_owner();
+  perform pg_temp.expect((select status from public.sales where id = v_sale2) = 'paid'
+    and (select status || ':' || decision_note from public.void_requests where id = v_request2) = 'rejected:Customer was served',
+    'rejecting keeps the sale paid and records the note');
+  v_request2 := (pg_temp.call_as(v_counter, format($q$ select to_jsonb(public.request_void(%L, 'Customer changed their mind')) $q$, v_sale2)) #>> '{}')::uuid;
+  perform pg_temp.run_as(v_owner, format($q$ select public.decide_void_request(%L, true, null) $q$, v_request2));
+  perform pg_temp.as_db_owner();
+  perform pg_temp.expect((select status || ':' || void_reason || ':' || voided_by from public.sales where id = v_sale2)
+      = 'voided:Customer changed their mind:' || v_owner,
+    'approving voids the sale with the request''s reason and the owner as voided_by');
+
+  -- search_sales: the counter gets today's sales only and no money.
+  v_result := pg_temp.call_as(v_counter, $q$ select public.search_sales('{"from": "2000-01-01", "limit": 100}'::jsonb) $q$);
+  perform pg_temp.expect(v_result -> 'totals' = 'null'::jsonb
+    and not exists (select 1 from jsonb_array_elements(v_result -> 'rows') r where r ->> 'total' is not null)
+    and not exists (select 1 from jsonb_array_elements(v_result -> 'rows') r where (r ->> 'id')::uuid = v_old_sale)
+    and exists (select 1 from jsonb_array_elements(v_result -> 'rows') r where (r ->> 'id')::uuid = v_sale2),
+    'search_sales gives the counter today''s sales without totals or amounts (the owner-only date filter is ignored)', left(v_result::text, 300));
+
+  -- The owner's totals match the rows: revenue counts paid sales only.
+  v_result := pg_temp.call_as(v_owner, format($q$ select public.search_sales('{"from": "%s", "to": "%s", "recorded_by": "%s", "limit": 100}'::jsonb) $q$,
+    private.accra_today(), private.accra_today(), v_counter));
+  perform pg_temp.expect((v_result ->> 'count')::integer = jsonb_array_length(v_result -> 'rows')
+    and (v_result -> 'totals' ->> 'revenue')::bigint = (select coalesce(sum((r ->> 'total')::bigint), 0)
+          from jsonb_array_elements(v_result -> 'rows') r where r ->> 'status' = 'paid')
+    and (v_result -> 'totals' ->> 'voided')::integer = (select count(*) from jsonb_array_elements(v_result -> 'rows') r where r ->> 'status' = 'voided')
+    and (v_result -> 'totals' ->> 'revenue')::bigint = (select coalesce(sum(value::bigint), 0) from jsonb_each_text(v_result -> 'totals' -> 'by_method')),
+    'the owner''s filtered totals match the rows shown, and the methods add up to the revenue', left(v_result::text, 300));
+  v_result := pg_temp.call_as(v_owner, format($q$ select public.search_sales('{"staff_id": "%s", "method": "card", "status": "voided"}'::jsonb) $q$, v_kwame));
+  perform pg_temp.expect((v_result ->> 'count')::integer = 1 and (v_result -> 'rows' -> 0 ->> 'id')::uuid = v_sale2,
+    'search_sales filters by staff, payment method, and status', left(v_result::text, 300));
+  v_result := pg_temp.call_as(v_owner, format($q$ select public.search_sales('{"receipt_no": "%s"}'::jsonb) $q$,
+    (select lower(receipt_no) from public.sales where id = v_old_sale)));
+  perform pg_temp.expect((v_result ->> 'count')::integer = 1 and (v_result -> 'rows' -> 0 ->> 'id')::uuid = v_old_sale,
+    'search_sales finds a receipt number', left(v_result::text, 300));
+  perform pg_temp.expect(pg_temp.run_as(v_owner, $q$ select public.search_sales('{"from": "yesterday-ish"}'::jsonb) $q$) = 'invalid_input'
+    and pg_temp.run_as(null, $q$ select public.search_sales('{}'::jsonb) $q$) like 'permission denied%',
+    'search_sales refuses bad filters and visitors');
+
+  -- sale_detail: change history for the owner only; the counter sees today's sales only.
+  v_result := pg_temp.call_as(v_owner, format($q$ select public.sale_detail(%L) $q$, v_sale2));
+  perform pg_temp.expect(jsonb_array_length(v_result -> 'void_requests') = 2
+    and (select count(*) from jsonb_array_elements(v_result -> 'history') h
+         where h ->> 'action' in ('void_requested', 'void_request_rejected', 'void_request_approved', 'sale_voided')) = 5
+    and (v_result ->> 'voided_by') = 'Test Owner' and (v_result ->> 'recorded_by') = 'Test Counter',
+    'sale_detail shows the requests and the full change history to the owner', left(v_result::text, 300));
+  v_result := pg_temp.call_as(v_counter, format($q$ select public.sale_detail(%L) $q$, v_sale2));
+  perform pg_temp.expect(v_result -> 'history' = 'null'::jsonb and (v_result -> 'void_requests' -> 0 ->> 'mine')::boolean,
+    'the counter sees the sale and their own requests, but no change history', left(v_result::text, 300));
+  v_message := pg_temp.run_as(v_counter, format($q$ select public.sale_detail(%L) $q$, v_old_sale));
+  perform pg_temp.expect(v_message = 'not_found', 'the counter cannot open a sale from two days ago', v_message);
 
   -- Owner alerts are claimed once per occurrence (a rerun job or a retry
   -- cannot queue a second SMS for the same thing).

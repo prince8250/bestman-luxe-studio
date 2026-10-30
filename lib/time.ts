@@ -81,6 +81,30 @@ export function accraDayStart(date: string): Date {
   return new Date(guess.getTime() - zoneOffsetMinutes(guess) * 60000);
 }
 
+// Calendar arithmetic on business dates (YYYY-MM-DD), independent of any zone.
+export function addDays(date: string, days: number): string {
+  const [year, month, day] = date.split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10);
+}
+
+// The Monday of that date's week (weeks start on Monday).
+export function startOfWeek(date: string): string {
+  const [year, month, day] = date.split("-").map(Number);
+  const weekday = new Date(Date.UTC(year, month - 1, day)).getUTCDay(); // 0 = Sunday
+  return addDays(date, -((weekday + 6) % 7));
+}
+
+export function startOfMonth(date: string): string {
+  return `${date.slice(0, 7)}-01`;
+}
+
+// "Fri 30 Oct 2026" for a business date.
+export function formatBusinessDate(date: string): string {
+  const [year, month, day] = date.split("-").map(Number);
+  const dayAndMonth = new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", weekday: "short", day: "numeric", month: "short" });
+  return `${dayAndMonth.format(new Date(Date.UTC(year, month - 1, day)))} ${year}`;
+}
+
 // "08:12"
 export function formatAccraTime(value: Date | string): string {
   return clock.format(toDate(value));

@@ -6,7 +6,9 @@ import { AlertTriangle, CheckCircle2, PackagePlus, Printer, Search, UserRound } 
 
 import { PosButton } from "@/components/brand-pos/pos-button";
 import { posInputClass } from "@/components/pos/form-fields";
+import { newPrintJob, ReceiptPrintFrame, type PrintJob } from "@/components/pos/receipt/receipt-print-frame";
 import { Input } from "@/components/ui/input";
+import { requestErrorMessage } from "@/lib/actions/request-error";
 import type { PosRole } from "@/lib/auth/types";
 import { formatGhs } from "@/lib/money";
 import { normalizePhone } from "@/lib/phone";
@@ -48,7 +50,7 @@ export function NewSale({ catalog, userId, role, maxCounterDiscountPercent, dayC
   const [done, setDone] = React.useState<(ConfirmedSale & { change: number | null }) | null>(null);
   // The receipt prints from a hidden frame, so the counter stays on this
   // screen, ready for the next customer. A new nonce prints again.
-  const [printJob, setPrintJob] = React.useState<{ saleId: string; nonce: string } | null>(null);
+  const [printJob, setPrintJob] = React.useState<PrintJob | null>(null);
   const searchRef = React.useRef<HTMLInputElement>(null);
   const ticketRef = React.useRef<HTMLElement>(null);
 
@@ -139,13 +141,15 @@ export function NewSale({ catalog, userId, role, maxCounterDiscountPercent, dayC
       }
       const change = ticket.paymentMode === "cash" && ticket.tendered !== null ? ticket.tendered - result.data.total : null;
       setDone({ ...result.data, change });
-      setPrintJob({ saleId: result.data.saleId, nonce: crypto.randomUUID() });
+      setPrintJob(newPrintJob(result.data.saleId));
       clearDraft(userId);
       setTicket(newTicket(crypto.randomUUID()));
       setLookup({ state: "idle" });
       setQuery("");
-    } catch {
-      setError("Could not reach the server. Check the internet connection and press Confirm again. The sale will not be saved twice.");
+    } catch (error) {
+      setError(
+        requestErrorMessage(error, "Could not reach the server. Check the internet connection and press Confirm again. The sale will not be saved twice."),
+      );
     } finally {
       submitting.current = false;
       setPending(false);
@@ -292,7 +296,7 @@ export function NewSale({ catalog, userId, role, maxCounterDiscountPercent, dayC
               <div className="mt-2 flex flex-wrap gap-2">
                 <button
                   type="button"
-                  onClick={() => setPrintJob({ saleId: done.saleId, nonce: crypto.randomUUID() })}
+                  onClick={() => setPrintJob(newPrintJob(done.saleId))}
                   className="inline-flex min-h-11 items-center gap-1.5 rounded-[10px] bg-pos-surface px-3 text-sm font-medium text-pos-text hover:bg-pos-subtle focus-visible:outline-2 focus-visible:outline-pos-accent"
                 >
                   <Printer className="h-4 w-4" /> Reprint
@@ -425,16 +429,7 @@ export function NewSale({ catalog, userId, role, maxCounterDiscountPercent, dayC
         </div>
       )}
 
-      {printJob && (
-        <iframe
-          key={printJob.nonce}
-          src={`/pos/receipts/${printJob.saleId}?print=1`}
-          title="Receipt printing"
-          aria-hidden
-          tabIndex={-1}
-          className="pointer-events-none fixed top-0 -left-[10000px] h-[900px] w-[420px] border-0"
-        />
-      )}
+      <ReceiptPrintFrame job={printJob} />
 
       <PriceDialog
         line={priceLine}

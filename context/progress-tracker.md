@@ -8,7 +8,7 @@ Update this file whenever the current phase, active feature, or implementation s
 
 ## Current Goal
 
-- `10-sales-history-and-void.md`.
+- `11-edit-sale-and-reassign-staff.md` (ask open question 10, staff pay, first).
 
 ## Completed
 
@@ -30,6 +30,8 @@ Update this file whenever the current phase, active feature, or implementation s
 
 - **09 Receipt printing**: `/pos/receipts/[saleId]` (outside the POS shell, so only the receipt prints) built from `receipt_data(sale_id)` (migration `20261030200000`): the stored sale, lines with staff names, payments, the counter account's name, studio settings, and the print count; same visibility as sales (owner any, counter today's only). `receipt_prints` records every print (`record_receipt_print`), so every print after the first is marked **REPRINT**. Copies from Settings (default 2): the customer's copy, then a **STAFF COPY** per staff member on the sale (at least copies − 1). After CONFIRM & PRINT the receipt loads in a hidden frame and opens the print dialog, so the counter stays on New sale; the success panel has Reprint and View receipt. Paper per device (cookie): **80mm roll** (each copy one page, exactly as tall as the receipt, so the printer cuts per copy and feeds no blank paper) or **A4** (copies side by side with dashed cut lines). Black and white, logo `public/brand/logo-receipt.png`, "Served by", "Served at the counter by", tendered and change, references, footer, socials, WhatsApp, "Book online at". Owner-guide notes in `docs/owner-guide-draft.md` (driver, default printer, paper size and cutter, Chrome `--kiosk-printing` shortcut, A4, the "no receipt, no service" rule). Verified: print output rendered through headless Chrome to PDF, 80mm (2 pages of 80 × 145mm, controls hidden) and A4 (one page, both copies, cut lines); the developer printed and reprinted BLS-000202 (REPRINT shown afterwards); a three-line sale printed 3 copies (customer, Kofi, Efua). The Claude app's built-in browser does not show Chrome's print preview; test printing in real Chrome. Checked at 1280, 768, and 375px.
 
+- **10 Sales history and voids**: `/pos/sales`. Owner: every sale, filters in the URL (dates: today, yesterday, this week, this month, last 30 days, custom; staff; payment method; channel; recorded by; status paid / voided / void requested), search by receipt number (`BLS-000213`, `bls213`, or `213`) or phone across all dates, totals for the whole filtered range (revenue, sales, voided count and amount, money per method; paid sales only), 50 per page, and a notice naming sales from other days that were voided during the dates shown (they count on the day they were sold). Counter: today's sales only, no totals and no per-sale amounts in the list. Table on a desktop, cards on a tablet or phone. Sale page `/pos/sales/[id]`: times (paid, recorded, business day), past-sale / after-close / voided / "Void requested" badges, who recorded it, customer, lines with staff and override reasons, payments with change and references, linked appointment, print count, void requests, and (owner only) the change history in plain sentences. Actions: Reprint (hidden frame, marked REPRINT), View receipt (`?from=sale` returns to the sale), owner Void (reason required), counter "Request void (the owner will approve)" and Withdraw, owner Approve / Reject (note required on reject) on the sale and on `/pos/sales/void-requests` (pending first, then the last 20 decisions; count shown on the Sales page). Find: a receipt number opens the sale (counter: today's only, else "ask the owner"). Migration `20261030210000`: `search_sales(filters)` and `sale_detail(sale_id)` (security definer, apply `private.can_see_sale`, money only for the owner); `receipt_data` / `record_receipt_print` now use the existing helper and the duplicate overload from spec 09 is dropped. Shared `components/pos/receipt/receipt-print-frame.tsx`. Database tests (95): a voided sale cannot be voided again, requested, or edited; reject keeps the sale with the note; approve uses the request's reason and the owner as `voided_by`; the counter's search has no money and no older sales; owner totals equal the rows and the methods add up; filters; history owner-only. Verified in the browser as the owner at 1280, 768, and 375px: Find "bls 143" opened BLS-000143; the developer approved the sample request (BLS-000143, from 29 Oct, now shown in the notice); void of BLS-000213 with a reason (blank refused) updated the list (revenue GHS 1,170 → 1,140, voided 1); 30-day voided filter (3 sales, GHS 310); a test request on BLS-000214 rejected with a note (blank refused). Not verified by hand: the counter's screens (request, withdraw, today-only list); the database tests cover their rules, and the developer can try them signed in as the counter.
+
 ## Development Database And Test Accounts
 
 - Development project: `bestman-luxe-studio` (ref `xpcsmqwdpswnvzyterwx`, eu-central-1, free plan). The CLI is linked (`npx supabase link --project-ref xpcsmqwdpswnvzyterwx`); `npm run db:push` applies new migrations.
@@ -43,7 +45,7 @@ Update this file whenever the current phase, active feature, or implementation s
 
 ## Next Up
 
-- `10-sales-history-and-void.md` (its sale detail page links to the receipt for reprints), then `11-edit-sale-and-reassign-staff.md` (ask open question 10 first).
+- `11-edit-sale-and-reassign-staff.md` (ask open question 10 first), then `12-record-past-sale.md`.
 
 ## Build Order
 
@@ -66,7 +68,7 @@ Specs live in `context/feature-specs/`. Build in order unless the developer says
 **Phase 3: POS core (the counter)**
 - [x] 08 New sale
 - [x] 09 Receipt printing
-- [ ] 10 Sales history, voids, and void requests
+- [x] 10 Sales history, voids, and void requests
 - [ ] 11 Reassign staff and edit a paid sale
 - [ ] 12 Record a past sale (outage fallback)
 - [ ] 13 Customers
@@ -189,8 +191,10 @@ Resolve each before the spec shown in brackets. Record the answer in the relevan
 - **Second review (2026-10-30)**: the POS error page uses Next.js 16.4's stable `retry()` (not `unstable_retry`, which was the 16.2 name) so "Try again" refetches the server data; client components catch a failed request (dropped internet) and show a message instead of staying stuck on "Saving…" (catalog, quick prices, staff, settings, counter accounts, sample data).
 - **Review of 2026-10-30, not changed (with reasons)**: counter sale-detail without amounts (conflicts with the supported counter reprint; RLS already limits the counter to today); empty `SMS_MODE` in `.env.example` (an empty value fails the enum, the explicit `console` is correct); `--font-sans` to Geist (the project uses Inter); allowing `/pos` in robots.txt (spec 00 and the architecture require disallow; POS pages are also `noindex` and never linked); edits to `components/ui` (button default type, sheet scroll, tabs orientation) because generated shadcn files are never edited. Note: `components/ui/tabs.tsx` does not forward `orientation` to Radix, so vertical tabs need a wrapper; only horizontal tabs are used.
 
+- **Third review (2026-10-30)**: a counter password reset or deactivation now reports when the account could not be signed out of its devices (the change and its audit row are still saved); Settings number fields refuse empty input instead of saving 0; opening-hours fields stop at 40 characters; every client request handler uses `lib/actions/request-error.ts`, which says "refresh the page" when a server action is unknown after a deploy (`unstable_isUnrecognizedActionError`) and keeps the connection message otherwise (applied to all forms, not only the three files named in the review).
 - **Receipts print from a hidden frame** (spec 09): after a sale, `/pos/receipts/<id>?print=1` loads in an off-screen iframe that records the print and calls `window.print()`, so no pop-up is needed and the counter never leaves New sale. With Chrome's `--kiosk-printing` it prints silently.
 - **Print count in the database** (spec 09): `receipt_prints` decides REPRINT, not a URL flag, so an original cannot be printed twice by reopening a link. A sale with several staff gets one STAFF COPY per staff member, so each person's slips match their count in the day report.
+- **Sales list money for the counter** (spec 10): the counter's Sales list shows no amounts at all (not only no totals), matching the Today page in `ui-context.md`, so it cannot be summed into the expected cash before the blind count. The sale page still shows the amounts, because the counter reprints and checks those receipts.
 - **Receipt paper per device** (spec 09): a `pos_paper` cookie (80mm or A4), set by a server action. On 80mm the page height is measured from the receipt before printing.
 
 ## What Changed From Context Version 1

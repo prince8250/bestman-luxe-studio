@@ -1358,8 +1358,10 @@ export type Database = {
         Args: { p_reason: string; p_sale_id: string }
         Returns: string
       }
+      sale_detail: { Args: { p_sale_id: string }; Returns: Json }
       sample_data_summary: { Args: never; Returns: Json }
       save_service: { Args: { payload: Json }; Returns: string }
+      search_sales: { Args: { p_filters?: Json }; Returns: Json }
       update_service_prices: { Args: { changes: Json }; Returns: number }
       void_sale: {
         Args: { p_reason: string; p_sale_id: string }

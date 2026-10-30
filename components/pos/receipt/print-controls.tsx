@@ -9,6 +9,7 @@ import { choosePaperAction, recordReceiptPrintAction } from "@/app/pos/receipts/
 import { PosButton } from "@/components/brand-pos/pos-button";
 import type { Paper } from "@/lib/receipt/receipt";
 import { cn } from "@/lib/utils";
+import { requestErrorMessage } from "@/lib/actions/request-error";
 
 interface PrintControlsProps {
   saleId: string;
@@ -16,6 +17,8 @@ interface PrintControlsProps {
   prints: number;
   paper: Paper;
   autoPrint: boolean;
+  /** Where "back" goes: New sale, or the sale this receipt was opened from. */
+  back: { href: string; label: string };
 }
 
 const PAGE_STYLE_ID = "receipt-page-size";
@@ -57,7 +60,7 @@ function setPageSize(paper: Paper) {
 
 // The bar above the receipt (never printed): print, reprint, and which paper
 // this device prints on. With autoPrint (after a sale) it prints right away.
-export function PrintControls({ saleId, receiptNo, prints, paper, autoPrint }: PrintControlsProps) {
+export function PrintControls({ saleId, receiptNo, prints, paper, autoPrint, back }: PrintControlsProps) {
   const router = useRouter();
   const pathname = usePathname();
   const [busy, setBusy] = React.useState(false);
@@ -112,8 +115,8 @@ export function PrintControls({ saleId, receiptNo, prints, paper, autoPrint }: P
       try {
         const result = await choosePaperAction(next);
         if (!result.ok) setError(result.error);
-      } catch {
-        setError("Could not reach the server. Check the internet connection and try again.");
+      } catch (error) {
+        setError(requestErrorMessage(error));
       }
     });
   }
@@ -122,10 +125,10 @@ export function PrintControls({ saleId, receiptNo, prints, paper, autoPrint }: P
     <div className="sticky top-0 z-10 border-b border-pos-border bg-pos-surface print:hidden">
       <div className="mx-auto flex max-w-3xl flex-wrap items-center gap-2 p-3">
         <Link
-          href="/pos/sale/new"
+          href={back.href}
           className="inline-flex min-h-11 items-center gap-1.5 rounded-[10px] px-3 text-sm font-medium hover:bg-pos-subtle focus-visible:outline-2 focus-visible:outline-pos-accent"
         >
-          <ArrowLeft className="h-4 w-4" /> New sale
+          <ArrowLeft className="h-4 w-4" /> {back.label}
         </Link>
         <div className="min-w-0 flex-1">
           <h1 className="display-type truncate text-2xl leading-none">Receipt {receiptNo}</h1>
