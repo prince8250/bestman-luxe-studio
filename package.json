@@ -17,7 +17,8 @@
     "test:db": "node tools/db/run-db-tests.mjs",
     "assets:logo": "node tools/assets/make-logo.mjs",
     "test:db:local": "node tools/db/local-check.mjs",
-    "sms:test": "node tools/sms/send-test.mjs"
+    "sms:test": "node tools/sms/send-test.mjs",
+    "restore:import": "node tools/restore/import-json.mts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",

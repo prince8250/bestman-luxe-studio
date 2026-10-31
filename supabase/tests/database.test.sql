@@ -1243,6 +1243,34 @@ begin
   perform pg_temp.expect(v_message like 'permission denied%/permission denied%/permission denied%',
     'only the server (service role) can claim, finish, or run the daily checks', v_message);
 
+  -- ---------------------------------------------------------------------------
+  -- Spec 20: backups. The PC script's day report (service role), and the
+  -- restore functions, which never write into a database that has data.
+  -- ---------------------------------------------------------------------------
+  perform pg_temp.as_db_owner();
+  perform pg_temp.expect(public.backup_day_report('2000-01-03') -> 'figures' @> '{"revenue": 18000, "sales_count": 2}',
+    'backup_day_report gives the PC script the day report of any day (here 3 Jan 2000: 180.00 over 2 sales)');
+  begin
+    perform public.restore_begin();
+    v_message := 'OK';
+  exception when others then
+    v_message := sqlerrm;
+  end;
+  perform pg_temp.expect(v_message = 'not_empty', 'restore_begin refuses a database that already has data', v_message);
+  begin
+    perform public.restore_table('sales', '[]'::jsonb);
+    v_message := 'OK';
+  exception when others then
+    v_message := sqlerrm;
+  end;
+  perform pg_temp.expect(v_message = 'not_restoring', 'restore_table writes nothing unless a restore was started', v_message);
+  v_message := pg_temp.run_as(v_owner, $q$ select public.backup_day_report('2000-01-03') $q$)
+    || '/' || pg_temp.run_as(v_owner, 'select public.restore_begin()')
+    || '/' || pg_temp.run_as(v_counter, $q$ select public.restore_table('sales', '[]'::jsonb) $q$)
+    || '/' || pg_temp.run_as(null, $q$ select public.restore_finish('[]'::jsonb) $q$);
+  perform pg_temp.expect(v_message like 'permission denied%/permission denied%/permission denied%/permission denied%',
+    'the backup day report and the restore functions are for the server (service role) only', v_message);
+
   -- Owner alerts are claimed once per occurrence (a rerun job or a retry
   -- cannot queue a second SMS for the same thing).
   perform pg_temp.as_db_owner();

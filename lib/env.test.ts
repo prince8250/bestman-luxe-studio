@@ -45,6 +45,13 @@ describe("parseServerEnv", () => {
     ).toThrow(/SMS_SENDER_ID/);
   });
 
+  it("refuses the same token for the studio PC and GitHub", () => {
+    const token = "x".repeat(40);
+    expect(() =>
+      parseServerEnv({ SUPABASE_SERVICE_ROLE_KEY: "secret", BACKUP_EXPORT_TOKEN: token, BACKUP_WEBHOOK_TOKEN: token }),
+    ).toThrow(/BACKUP_WEBHOOK_TOKEN: must be different/);
+  });
+
   it("needs the SMS key and sender ID before sending through Arkesel", () => {
     expect(() => parseServerEnv({ SUPABASE_SERVICE_ROLE_KEY: "secret", SMS_MODE: "live" })).toThrow(
       /SMS_API_KEY: is required when SMS_MODE is live[\s\S]*SMS_SENDER_ID/,

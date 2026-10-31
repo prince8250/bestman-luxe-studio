@@ -1303,6 +1303,7 @@ export type Database = {
         Returns: Json
       }
       activity_unread_count: { Args: never; Returns: number }
+      backup_day_report: { Args: { p_business_date: string }; Returns: Json }
       cancel_appointment: {
         Args: { p_appointment_id: string; p_reason: string }
         Returns: undefined
@@ -1441,6 +1442,12 @@ export type Database = {
       request_void: {
         Args: { p_reason: string; p_sale_id: string }
         Returns: string
+      }
+      restore_begin: { Args: never; Returns: Json }
+      restore_finish: { Args: { p_links?: Json }; Returns: Json }
+      restore_table: {
+        Args: { p_rows: Json; p_table: string }
+        Returns: number
       }
       sale_detail: { Args: { p_sale_id: string }; Returns: Json }
       sample_data_summary: { Args: never; Returns: Json }

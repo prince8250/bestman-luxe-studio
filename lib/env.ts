@@ -53,6 +53,11 @@ export const serverEnvSchema = z
     CRON_SECRET: optionalToken,
   })
   .superRefine((env, ctx) => {
+    // The token decides what a backup heartbeat may report (spec 20), so the
+    // studio PC's and GitHub's tokens must not be the same value.
+    if (env.BACKUP_EXPORT_TOKEN && env.BACKUP_EXPORT_TOKEN === env.BACKUP_WEBHOOK_TOKEN) {
+      ctx.addIssue({ code: "custom", path: ["BACKUP_WEBHOOK_TOKEN"], message: "must be different from BACKUP_EXPORT_TOKEN" });
+    }
     // Sending through Arkesel needs both; refuse to start without them.
     if (env.SMS_MODE === "console") return;
     for (const name of ["SMS_API_KEY", "SMS_SENDER_ID"] as const) {

@@ -1,7 +1,6 @@
-import { createHash, timingSafeEqual } from "node:crypto";
-
 import { sendPendingOwnerAlerts } from "@/lib/alerts/send";
 import { getServerEnv } from "@/lib/env.server";
+import { bearerMatches, unauthorized } from "@/lib/http/bearer";
 import { isCalendarDate } from "@/lib/reports/range";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { accraDate, addDays } from "@/lib/time";
@@ -20,18 +19,8 @@ import { accraDate, addDays } from "@/lib/time";
 
 export const maxDuration = 60;
 
-// Compares hashes of the two values, so the check takes the same time
-// whatever the header holds (no hints for guessing the secret).
-function authorized(request: Request): boolean {
-  const secret = getServerEnv().CRON_SECRET;
-  if (!secret) return false;
-  const given = createHash("sha256").update(request.headers.get("authorization") ?? "").digest();
-  const expected = createHash("sha256").update(`Bearer ${secret}`).digest();
-  return timingSafeEqual(given, expected);
-}
-
 export async function GET(request: Request) {
-  if (!authorized(request)) return new Response("Unauthorized", { status: 401 });
+  if (!bearerMatches(request, getServerEnv().CRON_SECRET)) return unauthorized();
 
   const today = accraDate();
   const requested = new URL(request.url).searchParams.get("date");

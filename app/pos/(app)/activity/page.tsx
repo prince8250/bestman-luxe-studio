@@ -37,12 +37,30 @@ export default async function ActivityPage({ searchParams }: PageProps<"/pos/act
   const before = beforeParam && !Number.isNaN(Date.parse(beforeParam)) ? new Date(beforeParam).toISOString() : null;
 
   const supabase = await createSupabaseServerClient();
-  const [feed, accounts, alerts, settings] = await Promise.all([
-    loadActivity(supabase, { before, type, actorId: by }),
-    supabase.from("profiles").select("id, display_name, active").eq("role", "counter").order("display_name"),
-    loadRecentAlerts(supabase),
-    supabase.from("studio_settings").select("owner_alert_phone").eq("id", true).maybeSingle(),
-  ]);
+  let loaded;
+  try {
+    loaded = await Promise.all([
+      loadActivity(supabase, { before, type, actorId: by }),
+      supabase.from("profiles").select("id, display_name, active").eq("role", "counter").order("display_name"),
+      loadRecentAlerts(supabase),
+      supabase.from("studio_settings").select("owner_alert_phone").eq("id", true).maybeSingle(),
+    ]);
+  } catch (error) {
+    // The page refreshes itself every 30 seconds; one refresh that cannot
+    // reach the server (the internet dropped for a moment) shows this and
+    // tries again, instead of replacing the page with an error screen.
+    console.error("activity feed could not load", error instanceof Error ? error.message : error);
+    return (
+      <main className="mx-auto w-full max-w-[1200px] flex-1 p-4 md:p-8">
+        <AutoRefresh seconds={30} />
+        <PageHeader title="Activity" description="What happens at the counter, as it happens." />
+        <p role="status" className="rounded-[10px] bg-pos-warning-soft px-3 py-2.5 text-sm text-pos-warning">
+          Could not reach the server just now. The feed tries again every 30 seconds; check the internet connection if this stays.
+        </p>
+      </main>
+    );
+  }
+  const [feed, accounts, alerts, settings] = loaded;
 
   const query = (extra: Record<string, string>) =>
     new URLSearchParams({ ...(type ? { type } : {}), ...(by ? { by } : {}), ...extra }).toString();
