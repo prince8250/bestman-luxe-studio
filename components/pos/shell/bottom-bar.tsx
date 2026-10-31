@@ -10,6 +10,7 @@ import type { PosRole } from "@/lib/auth/types";
 import { bottomBarKeys, isActivePath, NEW_SALE_HREF, sidebarItems, type NavItem } from "@/lib/pos/navigation";
 import { cn } from "@/lib/utils";
 
+import { UnreadBadge, useActivityUnread } from "./activity-unread";
 import { SignOutButton } from "./sign-out-button";
 
 const newSaleItem: NavItem = { key: "new-sale", label: "New sale", href: NEW_SALE_HREF, icon: Plus, permission: "sale.create" };
@@ -21,6 +22,7 @@ const tabClass =
 export function BottomBar({ role }: { role: PosRole }) {
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = React.useState(false);
+  const unread = useActivityUnread();
   const all = [newSaleItem, ...sidebarItems(role)];
   const tabKeys = bottomBarKeys(role);
   const tabs = tabKeys.map((key) => all.find((item) => item.key === key)).filter((item): item is NavItem => Boolean(item));
@@ -41,7 +43,10 @@ export function BottomBar({ role }: { role: PosRole }) {
             aria-current={active ? "page" : undefined}
             className={cn(tabClass, active ? "text-pos-accent" : "text-pos-text-muted")}
           >
-            <Icon className="h-5 w-5" />
+            <span className="relative">
+              <Icon className="h-5 w-5" />
+              {item.key === "activity" && <UnreadBadge count={unread} />}
+            </span>
             {item.label.replace(" (today)", "")}
           </Link>
         );

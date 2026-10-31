@@ -133,7 +133,10 @@ declare
   v_c3 uuid;
   v_s4 uuid;
   v_s5 uuid;
+  v_d1 uuid;
+  v_d4 uuid;
   v_report jsonb;
+  v_alerts jsonb;
   v_count bigint;
   v_close jsonb;
   v_slot timestamptz := date_trunc('hour', now()) + interval '3 days';
@@ -156,6 +159,11 @@ begin
 
   update public.studio_settings set max_counter_discount_percent = 20, counter_backdate_days = 3,
     default_opening_float = 20000, cash_difference_tolerance = 0, override_alert_threshold = 5000;
+
+  -- The tests start from an open day. If today was really closed on this
+  -- database, that close is set aside here (rolled back with everything else).
+  update public.day_closes set reopened_at = now(), reopened_by = v_owner, reopen_reason = 'Test setup: start from an open day'
+    where business_date = private.accra_today() and reopened_at is null;
 
   insert into public.service_categories (name) values ('Test category') returning id into v_category;
   insert into public.services (category_id, name, price, duration_minutes)
@@ -962,6 +970,31 @@ begin
                                  where r ->> 'action' = 'staff_reassigned' and r ->> 'reason' = 'Test reassign'),
     'report_changes: today''s change log includes the reassignment', left(v_report::text, 300));
 
+  -- Spec 16: the change log filtered by type and account, in SQL.
+  v_report := pg_temp.call_as(v_owner, format($q$ select public.report_changes('%s', '%s', 500, array['staff_reassigned'], %L) $q$,
+    private.accra_today(), private.accra_today(), v_owner));
+  perform pg_temp.expect((v_report ->> 'count')::integer >= 1
+    and not exists (select 1 from jsonb_array_elements(v_report -> 'rows') r
+                    where r ->> 'action' <> 'staff_reassigned' or r ->> 'actor_name' <> 'Test Owner')
+    and exists (select 1 from jsonb_array_elements(v_report -> 'rows') r where r ->> 'reason' = 'Test reassign'),
+    'report_changes filters by type and account', left(v_report::text, 300));
+
+  -- Spec 16: one staff member's report reflects the reassignment.
+  v_report := pg_temp.call_as(v_owner, format($q$ select public.report_staff_detail(%L, '2000-01-03', '2000-01-09') $q$, v_kwame));
+  perform pg_temp.expect((v_report ->> 'services')::integer = 4 and (v_report ->> 'revenue')::integer = 22000
+    and jsonb_array_length(v_report -> 'lines') = 3
+    and (v_report -> 'by_service') @> jsonb_build_array(jsonb_build_object('service_id', v_wash, 'times', 3, 'revenue', 12000))
+    and (select count(*) from jsonb_array_elements(v_report -> 'lines') l where l ->> 'reassigned_from' = 'Test Kofi') = 1
+    and jsonb_array_length(v_report -> 'by_day') = 7 and v_report -> 'by_day' -> 4 @> '{"date": "2000-01-07", "services": 1}',
+    'report_staff_detail: Kwame''s week includes the line reassigned from Kofi, marked', left(v_report::text, 300));
+  v_report := pg_temp.call_as(v_owner, format($q$ select public.report_staff_detail(%L, '2000-01-03', '2000-01-09') $q$, v_kofi));
+  perform pg_temp.expect((v_report ->> 'services')::integer = 2 and (v_report ->> 'revenue')::integer = 14000
+    and jsonb_array_length(v_report -> 'moved_away') = 1 and v_report -> 'moved_away' -> 0 ->> 'to_name' = 'Test Kwame',
+    'report_staff_detail: Kofi''s week no longer counts the moved line and lists it as moved away', left(v_report::text, 300));
+  perform pg_temp.expect(pg_temp.run_as(v_counter, format($q$ select public.report_staff_detail(%L, '2000-01-03', '2000-01-09') $q$, v_kofi)) = 'not_authorized'
+    and pg_temp.run_as(v_owner, format($q$ select public.report_staff_detail(%L, '2000-01-03', '2000-01-09') $q$, gen_random_uuid())) = 'not_found',
+    'report_staff_detail is owner-only and refuses an unknown staff member');
+
   -- The day report: the owner any day; the counter only after that day is closed.
   v_report := pg_temp.call_as(v_counter, $q$ select public.report_day_close_export('2000-01-03') $q$);
   perform pg_temp.expect(v_report -> 'figures' @> '{"revenue": 18000, "sales_count": 2}'
@@ -971,6 +1004,94 @@ begin
   perform pg_temp.expect(v_message = 'not_closed', 'report_day_close_export: the counter gets nothing for a day that is not closed', v_message);
   v_report := pg_temp.call_as(v_owner, $q$ select public.report_day_close_export('2000-01-05') $q$);
   perform pg_temp.expect(v_report -> 'figures' @> '{"revenue": 13500}', 'report_day_close_export: the owner gets any day', left(v_report::text, 300));
+
+  -- ---------------------------------------------------------------------------
+  -- Close day (spec 17) on Tue 1 Feb 2000, a day nothing else touches:
+  --   D1 09:00  cut by Kofi    100.00 cash, then edited to 80.00 with 20.00 cash refunded
+  --   D2 11:00  wash x2 Kwame   80.00 MoMo
+  --   D3 14:00  cut by Kwame   100.00 card
+  --   D4 16:00  wash by Kofi    40.00 cash, then VOIDED (counts nowhere)
+  --   D5 17:00  cut by Kofi    100.00 cash
+  -- Opening float 150.00 (not the default 200.00, so it needs a reason).
+  -- Hand calculation: expected cash = 150 + 100 - 20 + 100 = 330.00; counted
+  -- 325.00, so the difference is -5.00. MoMo 80.00, card 100.00, 4 sales.
+  -- ---------------------------------------------------------------------------
+  perform pg_temp.as_db_owner();
+  v_d1 := pg_temp.add_sale('2000-02-01 09:00+00', v_counter, null,
+    jsonb_build_array(jsonb_build_object('service', v_cut, 'name', 'Test cut', 'staff', v_kofi, 'list', 10000, 'unit', 10000)),
+    '[{"method": "cash", "amount": 10000}]');
+  perform pg_temp.add_sale('2000-02-01 11:00+00', v_counter, null,
+    jsonb_build_array(jsonb_build_object('service', v_wash, 'name', 'Test wash', 'staff', v_kwame, 'list', 4000, 'unit', 4000, 'qty', 2)),
+    '[{"method": "momo", "amount": 8000}]');
+  perform pg_temp.add_sale('2000-02-01 14:00+00', v_counter, null,
+    jsonb_build_array(jsonb_build_object('service', v_cut, 'name', 'Test cut', 'staff', v_kwame, 'list', 10000, 'unit', 10000)),
+    '[{"method": "card", "amount": 10000}]');
+  v_d4 := pg_temp.add_sale('2000-02-01 16:00+00', v_counter, null,
+    jsonb_build_array(jsonb_build_object('service', v_wash, 'name', 'Test wash', 'staff', v_kofi, 'list', 4000, 'unit', 4000)),
+    '[{"method": "cash", "amount": 4000}]');
+  perform pg_temp.add_sale('2000-02-01 17:00+00', v_counter, null,
+    jsonb_build_array(jsonb_build_object('service', v_cut, 'name', 'Test cut', 'staff', v_kofi, 'list', 10000, 'unit', 10000)),
+    '[{"method": "cash", "amount": 10000}]');
+  set constraints all immediate;
+  set constraints all deferred;
+
+  v_message := pg_temp.run_as(v_owner, format($q$ select public.edit_sale_item((select id from public.sale_items where sale_id = %L),
+    '{"unit_price": 8000}'::jsonb, '{"method": "cash", "amount": -2000}'::jsonb, 'Shorter cut, refunded') $q$, v_d1));
+  v_message := v_message || '/' || pg_temp.run_as(v_owner, format($q$ select public.void_sale(%L, 'Test void') $q$, v_d4));
+  perform pg_temp.expect(v_message = 'OK/OK', 'close day fixtures: D1 refunded 20.00 cash, D4 voided', v_message);
+
+  perform pg_temp.as_db_owner();
+  perform pg_temp.expect(private.unclosed_days('2000-02-03', 14) = '[{"business_date": "2000-02-01", "sales_count": 4}]'::jsonb
+    and (private.day_status('2000-02-01') ->> 'open_since')::timestamptz = '2000-02-01 09:00+00'
+    and private.day_status('2000-02-01') ->> 'closed_at' is null,
+    'before the close: 1 Feb is listed as not closed (4 paid sales), open since its first sale',
+    private.unclosed_days('2000-02-03', 14)::text || ' ' || private.day_status('2000-02-01')::text);
+
+  v_close := pg_temp.call_as(v_counter, $q$
+    select public.close_day('2000-02-01', 32500, 8000, 15000, 'Test close', 'Change for the morning') $q$);
+  perform pg_temp.expect(
+    v_close @> '{"opening_float": 15000, "expected_cash": 33000, "counted_cash": 32500, "cash_difference": -500,
+                 "cash": 18000, "momo": 8000, "card": 10000, "momo_reported": 8000, "sales_count": 4}'
+    and exists (select 1 from public.day_closes where id = (v_close ->> 'day_close_id')::uuid
+                and expected_cash = 33000 and counted_cash = 32500 and cash_difference = -500
+                and expected_momo = 8000 and expected_card = 10000 and sales_count = 4
+                and opening_float_reason = 'Change for the morning' and closed_by = v_counter),
+    'close_day on a day with cash, MoMo, card, a refund, and a void: expected 330.00, counted 325.00, difference -5.00 (hand-checked)',
+    v_close::text);
+  perform pg_temp.expect(
+    exists (select 1 from public.owner_alerts where occurrence_key = 'cash_difference:' || (v_close ->> 'day_close_id')
+            and (payload ->> 'cash_difference')::integer = -500)
+    and exists (select 1 from public.owner_alerts where occurrence_key = 'day_summary:' || (v_close ->> 'day_close_id')
+                and payload ->> 'business_date' = '2000-02-01'),
+    'the close queues the day summary and, beyond the tolerance, a cash difference alert');
+
+  perform pg_temp.as_db_owner();
+  perform pg_temp.expect(private.unclosed_days('2000-02-03', 14) = '[]'::jsonb
+    and private.day_status('2000-02-01') @> '{"closed_by": "Test Counter"}'
+    and private.day_status('2000-02-01') ->> 'closed_at' is not null,
+    'after the close: no day left open, and the status says who closed it and when',
+    private.day_status('2000-02-01')::text);
+
+  v_message := pg_temp.run_as(v_counter, $q$ select public.close_day('2000-02-01', 32500, null, null, null) $q$)
+    || '/' || pg_temp.run_as(v_owner, $q$ select public.reopen_day('2000-02-01', '  ') $q$)
+    || '/' || pg_temp.run_as(v_counter, $q$ select public.reopen_day('2000-02-01', 'Recount') $q$);
+  perform pg_temp.expect(v_message = 'already_closed/reason_required/not_authorized',
+    'a closed day cannot be closed again; reopening needs a reason and the owner', v_message);
+  v_message := pg_temp.run_as(v_owner, $q$ select public.reopen_day('2000-02-01', 'Recount the drawer') $q$)
+    || '/' || pg_temp.run_as(v_counter, $q$ select public.close_day('2000-02-01', 33000, 8000, 15000, null, 'Change for the morning') $q$);
+  perform pg_temp.expect(v_message = 'OK/OK'
+    and exists (select 1 from public.audit_log where action = 'day_reopened' and reason = 'Recount the drawer'
+                and after ->> 'business_date' = '2000-02-01' and actor_id = v_owner)
+    and (select count(*) from public.day_closes where business_date = '2000-02-01') = 2
+    and (select count(*) from public.day_closes where business_date = '2000-02-01' and reopened_at is null and cash_difference = 0) = 1,
+    'the owner reopens with a reason (logged), the day is closed again, and both closes stay in history', v_message);
+
+  perform pg_temp.expect(pg_temp.run_as(v_counter, 'select public.unclosed_days()') = 'OK'
+    and (pg_temp.call_as(v_counter, 'select public.day_status()') ->> 'business_date')::date = private.accra_today()
+    and pg_temp.run_as(null, 'select public.unclosed_days()') like 'permission denied%'
+    and pg_temp.run_as(null, 'select public.day_status()') like 'permission denied%'
+    and pg_temp.run_as(v_counter, $q$ select private.unclosed_days('2000-02-03', 14) $q$) like 'permission denied%',
+    'unclosed_days and day_status are for POS users only (dates and times, never money)');
 
   -- Owner only, and sane ranges.
   v_message := pg_temp.run_as(v_counter, $q$ select public.report_summary('2000-01-03', '2000-01-09') $q$)
@@ -986,6 +1107,169 @@ begin
     'visitors are refused, and a backwards or over-long range is refused');
   perform pg_temp.expect(pg_temp.run_as(v_owner, $q$ select private.r_summary('2000-01-03', '2000-01-09') $q$) like 'permission denied%',
     'the private report builders cannot be called directly');
+
+  -- ---------------------------------------------------------------------------
+  -- Spec 19: the owner's activity feed
+  -- ---------------------------------------------------------------------------
+  perform pg_temp.as_db_owner();
+  insert into public.sign_in_events (profile_id) values (v_counter);
+  insert into public.backup_runs (kind, status, message) values ('daily_pc', 'failed', 'Test backup failure');
+
+  v_report := pg_temp.call_as(v_owner, $q$ select public.activity_feed(null, 200) $q$);
+  perform pg_temp.expect(
+    exists (select 1 from jsonb_array_elements(v_report -> 'events') e
+            where e ->> 'type' = 'sign_in' and e ->> 'actor_name' = 'Test Counter')
+    and exists (select 1 from jsonb_array_elements(v_report -> 'events') e
+                where e ->> 'type' = 'backup_failed' and (e ->> 'unusual')::boolean and e #>> '{data,message}' = 'Test backup failure')
+    and exists (select 1 from jsonb_array_elements(v_report -> 'events') e
+                where e ->> 'type' = 'staff_reassigned' and e #>> '{data,reason}' = 'Test reassign' and e ->> 'actor_name' = 'Test Owner')
+    and exists (select 1 from jsonb_array_elements(v_report -> 'events') e
+                where e ->> 'type' = 'void_requested' and (e ->> 'unusual')::boolean and e ->> 'actor_name' = 'Test Counter')
+    and exists (select 1 from jsonb_array_elements(v_report -> 'events') e where e ->> 'type' = 'sale_voided')
+    and exists (select 1 from jsonb_array_elements(v_report -> 'events') e where e ->> 'type' = 'day_reopened')
+    and exists (select 1 from jsonb_array_elements(v_report -> 'events') e
+                where e ->> 'type' = 'sale' and e #>> '{data,receipt_no}' is not null and e ->> 'actor_name' is not null),
+    'activity_feed: sales, reassignments, void requests, voids, reopened days, counter sign-ins, and failed backups, with who did each',
+    left(v_report::text, 300));
+
+  v_report := pg_temp.call_as(v_owner, format($q$ select public.activity_feed(null, 50, array['sign_ins'], %L) $q$, v_counter));
+  perform pg_temp.expect(jsonb_array_length(v_report -> 'events') >= 1
+    and not exists (select 1 from jsonb_array_elements(v_report -> 'events') e
+                    where e ->> 'type' <> 'sign_in' or e ->> 'actor_id' <> v_counter::text),
+    'activity_feed filters by type and by account', left(v_report::text, 300));
+  v_report := pg_temp.call_as(v_owner, $q$ select public.activity_feed(null, 200, array['void_requests']) $q$);
+  perform pg_temp.expect(jsonb_array_length(v_report -> 'events') >= 1
+    and not exists (select 1 from jsonb_array_elements(v_report -> 'events') e where e ->> 'type' not like 'void_request%')
+    and jsonb_typeof(v_report -> 'pending_requests') = 'array',
+    'activity_feed: the void requests filter, and the pending requests list for the top of the page', left(v_report::text, 300));
+
+  perform pg_temp.as_db_owner();
+  update public.profiles set activity_seen_at = now() - interval '1 minute' where id = v_owner;
+  v_count := (pg_temp.call_as(v_owner, 'select to_jsonb(public.activity_unread_count())') #>> '{}')::bigint;
+  perform pg_temp.as_db_owner();
+  update public.profiles set activity_seen_at = now() + interval '1 minute' where id = v_owner;
+  perform pg_temp.expect(v_count >= 1
+    and (pg_temp.call_as(v_owner, 'select to_jsonb(public.activity_unread_count())') #>> '{}')::bigint = 0,
+    'activity_unread_count counts what happened since the owner last looked', v_count::text);
+
+  v_message := pg_temp.run_as(v_counter, 'select public.activity_feed()')
+    || '/' || pg_temp.run_as(v_counter, 'select public.activity_unread_count()')
+    || '/' || pg_temp.run_as(v_owner, 'select private.activity_events(null, null, 10, null, null)');
+  perform pg_temp.expect(v_message like 'not_authorized/not_authorized/permission denied%',
+    'a counter user cannot read the feed, and nobody calls its private builder', v_message);
+
+  -- ---------------------------------------------------------------------------
+  -- Spec 19: sending owner alerts (the service role's sender). Earlier pending
+  -- alerts are set aside so the counts below are exact.
+  -- ---------------------------------------------------------------------------
+  perform pg_temp.as_db_owner();
+  update public.owner_alerts set sms_status = 'skipped' where sms_status = 'pending';
+  update public.owner_alerts set sms_sent_at = null where sms_sent_at is not null;
+  update public.studio_settings set owner_alert_phone = '+233209999077', daily_sms_cap = 2,
+    alert_settings = alert_settings || '{"large_override": false}'::jsonb;
+  perform private.create_owner_alert('large_override', null, '{"receipt_no": "T-0"}', 'test19:off');
+  perform private.create_owner_alert('void_requested', null, '{"receipt_no": "T-1", "total": 1000}', 'test19:a');
+  perform private.create_owner_alert('backdated_sale', null, '{"receipt_no": "T-2", "total": 2000}', 'test19:b');
+  perform private.create_owner_alert('after_close_sale', null, '{"receipt_no": "T-3", "total": 3000}', 'test19:c');
+  perform private.create_owner_alert('cash_difference', null, '{"cash_difference": -500}', 'test19:old');
+  update public.owner_alerts set created_at = now() - interval '7 hours' where occurrence_key = 'test19:old';
+  update public.owner_alerts set created_at = now() - interval '4 minutes' where occurrence_key = 'test19:off';
+  update public.owner_alerts set created_at = now() - interval '3 minutes' where occurrence_key = 'test19:a';
+  update public.owner_alerts set created_at = now() - interval '2 minutes' where occurrence_key = 'test19:b';
+  update public.owner_alerts set created_at = now() - interval '1 minute' where occurrence_key = 'test19:c';
+
+  v_alerts := public.claim_owner_alerts(20);
+  perform pg_temp.expect(jsonb_array_length(v_alerts) = 2
+    and v_alerts -> 0 ->> 'kind' = 'void_requested' and v_alerts -> 1 ->> 'kind' = 'backdated_sale'
+    and v_alerts -> 0 ->> 'phone' = '+233209999077' and v_alerts -> 0 #>> '{payload,receipt_no}' = 'T-1'
+    and (select sms_status from public.owner_alerts where occurrence_key = 'test19:off') = 'disabled'
+    and (select sms_status || ':' || sms_error from public.owner_alerts where occurrence_key = 'test19:old') = 'skipped:Too old to send'
+    and (select sms_status from public.owner_alerts where occurrence_key = 'test19:c') = 'throttled'
+    and (select count(*) from public.owner_alerts where occurrence_key in ('test19:a', 'test19:b')
+         and sms_status = 'failed' and sms_error = 'Sending') = 2,
+    'claim_owner_alerts: oldest first up to the daily cap (2); switched-off kinds disabled, beyond the cap throttled, too old skipped',
+    left(v_alerts::text, 300));
+  perform pg_temp.expect(public.claim_owner_alerts(20) = '[]'::jsonb,
+    'a second claim finds nothing: an alert is never sent twice');
+
+  perform public.finish_owner_alert((v_alerts -> 0 ->> 'id')::uuid, true);
+  perform public.finish_owner_alert((v_alerts -> 1 ->> 'id')::uuid, false, 'Arkesel: Insufficient balance');
+  perform public.finish_owner_alert((v_alerts -> 0 ->> 'id')::uuid, false, 'Late duplicate result');
+  perform pg_temp.expect(
+    (select sms_status from public.owner_alerts where occurrence_key = 'test19:a' and sms_sent_at is not null and sms_error is null) = 'sent'
+    and (select sms_status || ':' || sms_error from public.owner_alerts where occurrence_key = 'test19:b') = 'failed:Arkesel: Insufficient balance',
+    'finish_owner_alert records sent or failed once; a late second result changes nothing');
+
+  -- One SMS sent today and a cap of 2: the next alert goes, the one after is throttled.
+  perform private.create_owner_alert('void_requested', null, '{"receipt_no": "T-4"}', 'test19:d');
+  v_alerts := public.claim_owner_alerts(20);
+  perform private.create_owner_alert('void_requested', null, '{"receipt_no": "T-5"}', 'test19:e');
+  perform public.claim_owner_alerts(20);
+  update public.studio_settings set owner_alert_phone = null;
+  perform private.create_owner_alert('void_requested', null, '{"receipt_no": "T-6"}', 'test19:f');
+  perform public.claim_owner_alerts(20);
+  perform pg_temp.expect(jsonb_array_length(v_alerts) = 1 and v_alerts -> 0 #>> '{payload,receipt_no}' = 'T-4'
+    and (select sms_status from public.owner_alerts where occurrence_key = 'test19:e') = 'throttled'
+    and (select sms_status || ':' || sms_error from public.owner_alerts where occurrence_key = 'test19:f') = 'skipped:No owner phone in Settings',
+    'the daily cap counts sent and in-flight SMS (failed ones do not); with no owner phone alerts stay in the feed only',
+    left(v_alerts::text, 300));
+  perform public.finish_owner_alert((v_alerts -> 0 ->> 'id')::uuid, true, 'Console: logged, not delivered');
+  perform pg_temp.expect(
+    (select sms_status || ':' || sms_error from public.owner_alerts where occurrence_key = 'test19:d') = 'sent:Console: logged, not delivered',
+    'an alert handled in console or sandbox mode keeps a note that it was not delivered');
+
+  -- The 23:30 checks. In the report week: Wed 5 Jan had a paid sale, no close,
+  -- and no PC backup; Mon 3 Jan was closed and gets a backup here; Tue 4 Jan
+  -- had no sales.
+  insert into public.backup_runs (kind, status, created_at) values ('daily_pc', 'success', '2000-01-03 21:00+00');
+  v_report := public.owner_daily_check('2000-01-05');
+  v_report := public.owner_daily_check('2000-01-05');
+  perform pg_temp.expect(
+    v_report @> '{"sales_count": 1, "closed": false, "backup_ok": false}'
+    and (select count(*) from public.owner_alerts
+         where occurrence_key in ('day_not_closed:2000-01-05', 'backup_stale:2000-01-05')) = 2
+    and (select payload @> '{"business_date": "2000-01-05", "revenue": 13500, "sales_count": 1}' from public.owner_alerts
+         where occurrence_key = 'day_not_closed:2000-01-05'),
+    'owner_daily_check: a day with sales, no close, and no backup queues day_not_closed (with the figures) and backup_stale once, even when run twice',
+    v_report::text);
+  perform pg_temp.expect(
+    public.owner_daily_check('2000-01-03') @> '{"closed": true, "backup_ok": true, "alerts": []}'
+    and public.owner_daily_check('2000-01-04') @> '{"sales_count": 0, "alerts": []}',
+    'owner_daily_check: a closed day with a backup, and a day without sales, queue nothing');
+
+  v_message := pg_temp.run_as(v_owner, 'select public.claim_owner_alerts()')
+    || '/' || pg_temp.run_as(v_owner, $q$ select public.owner_daily_check('2000-01-05') $q$)
+    || '/' || pg_temp.run_as(v_counter, $q$ select public.finish_owner_alert(gen_random_uuid(), true) $q$);
+  perform pg_temp.expect(v_message like 'permission denied%/permission denied%/permission denied%',
+    'only the server (service role) can claim, finish, or run the daily checks', v_message);
+
+  -- ---------------------------------------------------------------------------
+  -- Spec 20: backups. The PC script's day report (service role), and the
+  -- restore functions, which never write into a database that has data.
+  -- ---------------------------------------------------------------------------
+  perform pg_temp.as_db_owner();
+  perform pg_temp.expect(public.backup_day_report('2000-01-03') -> 'figures' @> '{"revenue": 18000, "sales_count": 2}',
+    'backup_day_report gives the PC script the day report of any day (here 3 Jan 2000: 180.00 over 2 sales)');
+  begin
+    perform public.restore_begin();
+    v_message := 'OK';
+  exception when others then
+    v_message := sqlerrm;
+  end;
+  perform pg_temp.expect(v_message = 'not_empty', 'restore_begin refuses a database that already has data', v_message);
+  begin
+    perform public.restore_table('sales', '[]'::jsonb);
+    v_message := 'OK';
+  exception when others then
+    v_message := sqlerrm;
+  end;
+  perform pg_temp.expect(v_message = 'not_restoring', 'restore_table writes nothing unless a restore was started', v_message);
+  v_message := pg_temp.run_as(v_owner, $q$ select public.backup_day_report('2000-01-03') $q$)
+    || '/' || pg_temp.run_as(v_owner, 'select public.restore_begin()')
+    || '/' || pg_temp.run_as(v_counter, $q$ select public.restore_table('sales', '[]'::jsonb) $q$)
+    || '/' || pg_temp.run_as(null, $q$ select public.restore_finish('[]'::jsonb) $q$);
+  perform pg_temp.expect(v_message like 'permission denied%/permission denied%/permission denied%/permission denied%',
+    'the backup day report and the restore functions are for the server (service role) only', v_message);
 
   -- Owner alerts are claimed once per occurrence (a rerun job or a retry
   -- cannot queue a second SMS for the same thing).

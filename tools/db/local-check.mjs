@@ -53,9 +53,9 @@ const supabaseStandIn = `
   grant usage on schema public to anon, authenticated, service_role;
 `;
 
-async function run(label, sql) {
+async function run(label, sql, database = db) {
   try {
-    await db.exec(sql);
+    await database.exec(sql);
     console.log(`✓ ${label}`);
   } catch (error) {
     console.error(`✖ ${label}\n  ${error.message}${error.where ? `\n  where: ${error.where}` : ""}`);
@@ -63,12 +63,16 @@ async function run(label, sql) {
   }
 }
 
-await run("Supabase stand-in", supabaseStandIn);
-
 const migrationsDir = path.join(root, "supabase/migrations");
-for (const file of readdirSync(migrationsDir).filter((name) => name.endsWith(".sql")).sort()) {
-  await run(`migration ${file}`, readFileSync(path.join(migrationsDir, file), "utf8"));
+async function migrate(database, quiet = false) {
+  await run(quiet ? "Supabase stand-in (restore target)" : "Supabase stand-in", supabaseStandIn, database);
+  for (const file of readdirSync(migrationsDir).filter((name) => name.endsWith(".sql")).sort()) {
+    if (quiet) await database.exec(readFileSync(path.join(migrationsDir, file), "utf8"));
+    else await run(`migration ${file}`, readFileSync(path.join(migrationsDir, file), "utf8"), database);
+  }
+  if (quiet) console.log("✓ migrations (restore target)");
 }
+await migrate(db);
 
 // Seed with two POS users so the sales part runs too.
 await run("test POS users for the seed", `
@@ -108,6 +112,71 @@ for (const file of readdirSync(path.join(root, "supabase/tests")).filter((name) 
     console.log(`# ${Number(marker[2]) - Number(marker[1])}/${marker[2]} passed`);
     if (Number(marker[1]) > 0) failed += 1;
   }
+}
+
+// Restore round trip (spec 20): export every backup table as lib/backup does
+// (one JSON array per table, in dependency order), with one table past 1,000
+// rows; restore into a second database that has only the migrations, the way
+// tools/restore/import-json.ts does (accounts first, then restore_begin,
+// restore_table in batches of 500, restore_finish); compare.
+await run(
+  "1,200 extra sign-ins (a table past 1,000 rows)",
+  `insert into public.sign_in_events (profile_id, signed_in_at)
+   select '00000000-0000-4000-8000-0000000000a2', now() - make_interval(mins => g) from generate_series(1, 1200) g;`,
+);
+const backupTables = (await db.query("select private.backup_tables() as tables")).rows[0].tables;
+const snapshot = {};
+for (const table of backupTables) {
+  snapshot[table] = (await db.query(`select coalesce(jsonb_agg(to_jsonb(t)), '[]'::jsonb) as rows from public.${table} t`)).rows[0].rows;
+}
+const accounts = (await db.query("select u.id, u.email from auth.users u join public.profiles p on p.id = u.id")).rows;
+const lastDay = async (database) =>
+  (
+    await database.query(`select d::text as business_date, (select coalesce(sum(total), 0) from public.sales where status = 'paid' and business_date = d)::int as revenue
+                          from (select max(business_date) as d from public.sales where status = 'paid') x`)
+  ).rows[0];
+
+const target = new PGlite({ extensions: { btree_gist, pgcrypto } });
+await migrate(target, true);
+try {
+  for (const account of accounts) await target.query("insert into auth.users (id, email) values ($1, $2)", [account.id, account.email]);
+  await target.query("select public.restore_begin()");
+  for (const table of backupTables) {
+    for (let start = 0; start < snapshot[table].length; start += 500) {
+      await target.query("select public.restore_table($1, $2::jsonb)", [table, JSON.stringify(snapshot[table].slice(start, start + 500))]);
+    }
+  }
+  const links = snapshot.sales.filter((row) => row.appointment_id).map((row) => ({ id: row.id, appointment_id: row.appointment_id }));
+  const finished = (await target.query("select public.restore_finish($1::jsonb) as result", [JSON.stringify(links)])).rows[0].result;
+
+  const mismatched = backupTables.filter((table) => Number(finished.row_counts[table]) !== snapshot[table].length);
+  const [sourceDay, targetDay] = [await lastDay(db), await lastDay(target)];
+  const checks = (
+    await target.query(`
+      select
+        (select count(*) from public.sales s where s.total <> (select coalesce(sum(line_total), 0) from public.sale_items i where i.sale_id = s.id)
+           or s.total <> (select coalesce(sum(amount), 0) from public.sale_payments p where p.sale_id = s.id))::int as unbalanced,
+        (select count(*) from public.sales where appointment_id is not null)::int as linked,
+        (private.next_receipt_no() > (select max(receipt_no) from public.sales)) as receipts_continue`)
+  ).rows[0];
+  const ok =
+    mismatched.length === 0 &&
+    snapshot.sign_in_events.length > 1000 &&
+    sourceDay.revenue === targetDay.revenue &&
+    sourceDay.business_date === targetDay.business_date &&
+    checks.unbalanced === 0 &&
+    checks.linked === links.length &&
+    checks.receipts_continue;
+  console.log(
+    `${ok ? "✓" : "✖"} restore round trip: ${backupTables.length} tables, ${snapshot.sign_in_events.length} sign-ins, ` +
+      `last day ${targetDay.business_date} revenue ${targetDay.revenue} (source ${sourceDay.revenue}), ` +
+      `${checks.linked} appointment links, unbalanced sales ${checks.unbalanced}, receipts continue: ${checks.receipts_continue}` +
+      (mismatched.length ? `, row counts differ: ${mismatched.join(", ")}` : ""),
+  );
+  if (!ok) failed += 1;
+} catch (error) {
+  console.error(`✖ restore round trip stopped: ${error.message}${error.where ? `\n  where: ${error.where}` : ""}`);
+  failed += 1;
 }
 
 // Removing sample data leaves nothing sample behind.

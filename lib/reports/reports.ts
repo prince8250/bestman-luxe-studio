@@ -270,8 +270,71 @@ const changesSchema = z.object({
   ),
 });
 export type ReportChanges = z.infer<typeof changesSchema>;
-export function reportChanges(supabase: Supabase, range: DateRange, limit = 500) {
-  return call(supabase, "report_changes", { ...rangeArgs(range), p_limit: limit }, changesSchema);
+export interface ChangeFilters {
+  /** Only these audit_log actions (all when empty). */
+  actions?: string[];
+  /** Only changes made by this account. */
+  actorId?: string | null;
+  limit?: number;
+}
+export function reportChanges(supabase: Supabase, range: DateRange, filters: ChangeFilters = {}) {
+  return call(
+    supabase,
+    "report_changes",
+    {
+      ...rangeArgs(range),
+      p_limit: filters.limit ?? 500,
+      p_actions: filters.actions?.length ? filters.actions : null,
+      p_actor_id: filters.actorId ?? null,
+    },
+    changesSchema,
+  );
+}
+
+// --- one staff member ---------------------------------------------------------
+
+const staffDetailSchema = z.object({
+  staff: z.object({ id: z.string(), name: z.string(), title: z.string().nullable(), active: z.boolean() }),
+  services: int,
+  revenue: money,
+  average_per_service: money,
+  custom_revenue: money,
+  by_service: z.array(z.object({ service_id: z.string().nullable(), name: z.string(), times: int, revenue: money })),
+  by_day: z.array(z.object({ date: z.string(), services: int, revenue: money })),
+  lines: z.array(
+    z.object({
+      item_id: z.string(),
+      sale_id: z.string(),
+      receipt_no: z.string(),
+      paid_at: z.string(),
+      name: z.string(),
+      custom: z.boolean(),
+      quantity: int,
+      line_total: money,
+      price_changed: z.boolean(),
+      reassigned_from: z.string().nullable(),
+      reassigned_by: z.string().nullable(),
+      reassign_reason: z.string().nullable(),
+    }),
+  ),
+  moved_away: z.array(
+    z.object({
+      item_id: z.string(),
+      sale_id: z.string(),
+      receipt_no: z.string(),
+      paid_at: z.string(),
+      name: z.string(),
+      line_total: money,
+      to_name: z.string().nullable(),
+      moved_by: z.string().nullable(),
+      reason: z.string().nullable(),
+      moved_at: z.string(),
+    }),
+  ),
+});
+export type ReportStaffDetail = z.infer<typeof staffDetailSchema>;
+export function reportStaffDetail(supabase: Supabase, staffId: string, range: DateRange) {
+  return call(supabase, "report_staff_detail", { p_staff_id: staffId, ...rangeArgs(range) }, staffDetailSchema);
 }
 
 // --- the day report (Close day download, PC backup) ----------------------------
@@ -334,5 +397,6 @@ export const reportSchemas = {
   byCounterUser: byCounterUserSchema,
   dayClose: dayCloseSchema,
   changes: changesSchema,
+  staffDetail: staffDetailSchema,
   dayReport: dayReportSchema,
 };

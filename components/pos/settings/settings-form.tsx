@@ -197,7 +197,8 @@ export function SettingsForm({ initial }: { initial: SettingsFormValues }) {
 
       <PosCard title="Owner alerts">
         <p className="-mt-2 mb-4 text-sm text-pos-text-muted">
-          Text messages to the owner&apos;s phone. Sending is switched on when the SMS service is connected.
+          Text messages to the owner&apos;s phone for each alert switched on below. Without a phone number, or past the daily
+          limit, alerts stay in Activity only.
         </p>
         <div className="grid gap-4 md:grid-cols-2">
           {text("ownerAlertPhone", "Owner's phone for alerts", undefined, { type: "tel", inputMode: "tel", placeholder: "024 456 5866" })}

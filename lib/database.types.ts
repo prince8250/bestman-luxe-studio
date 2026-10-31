@@ -1293,6 +1293,17 @@ export type Database = {
       }
     }
     Functions: {
+      activity_feed: {
+        Args: {
+          p_actor?: string
+          p_before?: string
+          p_limit?: number
+          p_types?: string[]
+        }
+        Returns: Json
+      }
+      activity_unread_count: { Args: never; Returns: number }
+      backup_day_report: { Args: { p_business_date: string }; Returns: Json }
       cancel_appointment: {
         Args: { p_appointment_id: string; p_reason: string }
         Returns: undefined
@@ -1301,6 +1312,7 @@ export type Database = {
         Args: { p_request_id: string }
         Returns: undefined
       }
+      claim_owner_alerts: { Args: { p_limit?: number }; Returns: Json }
       close_day: {
         Args: {
           p_business_date: string
@@ -1316,6 +1328,7 @@ export type Database = {
       create_sale: { Args: { payload: Json }; Returns: Json }
       customer_detail: { Args: { p_customer_id: string }; Returns: Json }
       customer_lookup: { Args: { p_phone: string }; Returns: Json }
+      day_status: { Args: never; Returns: Json }
       decide_void_request: {
         Args: { p_approve: boolean; p_note: string; p_request_id: string }
         Returns: undefined
@@ -1330,7 +1343,12 @@ export type Database = {
         Returns: Json
       }
       end_user_sessions: { Args: { p_user_id: string }; Returns: number }
+      finish_owner_alert: {
+        Args: { p_error?: string; p_id: string; p_ok: boolean }
+        Returns: undefined
+      }
       mark_no_show: { Args: { p_appointment_id: string }; Returns: undefined }
+      owner_daily_check: { Args: { p_date: string }; Returns: Json }
       rate_limit_clear: { Args: { p_key: string }; Returns: undefined }
       rate_limit_count: {
         Args: { p_key: string; p_window_seconds: number }
@@ -1390,7 +1408,13 @@ export type Database = {
         Returns: Json
       }
       report_changes: {
-        Args: { p_from: string; p_limit?: number; p_to: string }
+        Args: {
+          p_actions?: string[]
+          p_actor_id?: string
+          p_from: string
+          p_limit?: number
+          p_to: string
+        }
         Returns: Json
       }
       report_day_close: {
@@ -1405,6 +1429,10 @@ export type Database = {
         Args: { p_from: string; p_to: string }
         Returns: Json
       }
+      report_staff_detail: {
+        Args: { p_from: string; p_staff_id: string; p_to: string }
+        Returns: Json
+      }
       report_summary: { Args: { p_from: string; p_to: string }; Returns: Json }
       report_void_requests: {
         Args: { p_from: string; p_to: string }
@@ -1414,6 +1442,12 @@ export type Database = {
       request_void: {
         Args: { p_reason: string; p_sale_id: string }
         Returns: string
+      }
+      restore_begin: { Args: never; Returns: Json }
+      restore_finish: { Args: { p_links?: Json }; Returns: Json }
+      restore_table: {
+        Args: { p_rows: Json; p_table: string }
+        Returns: number
       }
       sale_detail: { Args: { p_sale_id: string }; Returns: Json }
       sample_data_summary: { Args: never; Returns: Json }
@@ -1428,6 +1462,7 @@ export type Database = {
         Returns: Json
       }
       search_sales: { Args: { p_filters?: Json }; Returns: Json }
+      unclosed_days: { Args: never; Returns: Json }
       update_service_prices: { Args: { changes: Json }; Returns: number }
       void_sale: {
         Args: { p_reason: string; p_sale_id: string }

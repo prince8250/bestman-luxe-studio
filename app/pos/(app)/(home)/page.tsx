@@ -10,12 +10,13 @@ import { ExportButtons } from "@/components/pos/dashboard/export-buttons";
 import { RevenueChart } from "@/components/pos/dashboard/revenue-chart";
 import { OwnerOnly } from "@/components/pos/owner-only";
 import { RangePicker } from "@/components/pos/reports/range-picker";
+import { RangeTooLong } from "@/components/pos/reports/report-parts";
 import { pageAccess } from "@/lib/auth/require-pos-user";
 import { formatGhs } from "@/lib/money";
 import { percentChangeOf } from "@/lib/reports/change";
 import { loadDashboard } from "@/lib/reports/dashboard";
 import { dashboardCsv } from "@/lib/reports/dashboard-csv";
-import { isCalendarDate, rangeFor, type RangePreset } from "@/lib/reports/range";
+import { isCalendarDate, isRangeTooLong, rangeFor, type RangePreset } from "@/lib/reports/range";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { accraDate, formatBusinessDate } from "@/lib/time";
 
@@ -44,7 +45,11 @@ export default async function DashboardPage({ searchParams }: PageProps<"/pos">)
   const from = isCalendarDate(one(params.from)) ? one(params.from) : "";
   const to = isCalendarDate(one(params.to)) ? one(params.to) : "";
   const today = accraDate();
-  const range = rangeFor(preset, today, from, to);
+  const requested = rangeFor(preset, today, from, to);
+  // The report functions refuse more than two years; say so and show today
+  // rather than fail.
+  const tooLong = isRangeTooLong(requested);
+  const range = tooLong ? rangeFor("today", today) : requested;
 
   const supabase = await createSupabaseServerClient();
   const [data, settings] = await Promise.all([
@@ -76,7 +81,14 @@ export default async function DashboardPage({ searchParams }: PageProps<"/pos">)
         actions={
           <>
             <div className="print:hidden">
-              <RangePicker action="/pos" presets={PRESETS} range={preset} from={range.from} to={range.to} />
+              <RangePicker
+                key={`${preset}|${requested.from}|${requested.to}`}
+                action="/pos"
+                presets={PRESETS}
+                range={preset}
+                from={requested.from}
+                to={requested.to}
+              />
             </div>
             <ExportButtons
               csv={dashboardCsv(data, settings.data?.studio_name ?? "Bestman Luxe Studio")}
@@ -85,6 +97,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/pos">)
           </>
         }
       />
+      {tooLong && <RangeTooLong showing="today" />}
 
       <section aria-label="Key figures" className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <KpiTile

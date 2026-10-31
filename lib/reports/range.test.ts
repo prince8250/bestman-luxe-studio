@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isCalendarDate, previousRange, rangeDays, rangeFor } from "./range";
+import { isCalendarDate, isRangeTooLong, previousRange, rangeDays, rangeFor } from "./range";
 
 const today = "2026-10-30"; // a Friday
 
@@ -27,6 +27,14 @@ describe("previousRange", () => {
     expect(previousRange({ from: "2000-01-01", to: "2000-01-31" })).toEqual({ from: "1999-12-01", to: "1999-12-31" });
     expect(previousRange({ from: "2026-03-01", to: "2026-03-31" })).toEqual({ from: "2026-01-29", to: "2026-02-28" });
     expect(rangeDays({ from: "2026-10-30", to: "2026-10-30" })).toBe(1);
+  });
+});
+
+describe("isRangeTooLong", () => {
+  it("matches the report functions' two-year limit (to - from <= 731 days)", () => {
+    expect(isRangeTooLong({ from: "2024-10-29", to: today })).toBe(false); // 731 days apart
+    expect(isRangeTooLong({ from: "2024-10-28", to: today })).toBe(true); // 732 days apart
+    expect(isRangeTooLong({ from: today, to: today })).toBe(false);
   });
 });
 

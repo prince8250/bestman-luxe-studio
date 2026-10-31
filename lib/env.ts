@@ -29,25 +29,41 @@ export const publicEnvSchema = z.object({
   NEXT_PUBLIC_TURNSTILE_SITE_KEY: optionalString,
 });
 
-export const serverEnvSchema = z.object({
-  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
-  // Needed from spec 20 (backup export endpoints).
-  BACKUP_EXPORT_TOKEN: optionalToken,
-  // Needed from spec 22 (weekly cloud backup).
-  BACKUP_WEBHOOK_TOKEN: optionalToken,
-  // Needed from spec 18 (SMS adapter). `console` logs messages instead of sending.
-  SMS_MODE: z.enum(["console", "live"]).default("console"),
-  SMS_API_KEY: optionalString,
-  // Ghana SMS sender IDs are at most 11 characters.
-  SMS_SENDER_ID: optionalString.refine(
-    (value) => value === undefined || value.length <= 11,
-    "must be 11 characters or fewer",
-  ),
-  // Needed from spec 34.
-  TURNSTILE_SECRET_KEY: optionalString,
-  // Needed from spec 19 (scheduled owner jobs).
-  CRON_SECRET: optionalToken,
-});
+export const serverEnvSchema = z
+  .object({
+    SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
+    // Needed from spec 20 (backup export endpoints).
+    BACKUP_EXPORT_TOKEN: optionalToken,
+    // Needed from spec 22 (weekly cloud backup).
+    BACKUP_WEBHOOK_TOKEN: optionalToken,
+    // Spec 18 (SMS adapter, Arkesel). `console` logs messages instead of
+    // sending; `sandbox` sends them to Arkesel's test mode (accepted and
+    // listed in the Arkesel history, never delivered or billed); `live` sends.
+    SMS_MODE: z.enum(["console", "sandbox", "live"]).default("console"),
+    SMS_API_KEY: optionalString,
+    // Ghana SMS sender IDs are at most 11 characters, and Arkesel must have
+    // approved it.
+    SMS_SENDER_ID: optionalString.refine(
+      (value) => value === undefined || value.length <= 11,
+      "must be 11 characters or fewer",
+    ),
+    // Needed from spec 34.
+    TURNSTILE_SECRET_KEY: optionalString,
+    // Needed from spec 19 (scheduled owner jobs).
+    CRON_SECRET: optionalToken,
+  })
+  .superRefine((env, ctx) => {
+    // The token decides what a backup heartbeat may report (spec 20), so the
+    // studio PC's and GitHub's tokens must not be the same value.
+    if (env.BACKUP_EXPORT_TOKEN && env.BACKUP_EXPORT_TOKEN === env.BACKUP_WEBHOOK_TOKEN) {
+      ctx.addIssue({ code: "custom", path: ["BACKUP_WEBHOOK_TOKEN"], message: "must be different from BACKUP_EXPORT_TOKEN" });
+    }
+    // Sending through Arkesel needs both; refuse to start without them.
+    if (env.SMS_MODE === "console") return;
+    for (const name of ["SMS_API_KEY", "SMS_SENDER_ID"] as const) {
+      if (!env[name]) ctx.addIssue({ code: "custom", path: [name], message: `is required when SMS_MODE is ${env.SMS_MODE}` });
+    }
+  });
 
 export type PublicEnv = z.infer<typeof publicEnvSchema>;
 export type ServerEnv = z.infer<typeof serverEnvSchema>;

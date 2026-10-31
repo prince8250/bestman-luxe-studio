@@ -60,6 +60,14 @@ export function rangeDays(range: DateRange): number {
   return Math.round((Date.parse(`${range.to}T00:00:00Z`) - Date.parse(`${range.from}T00:00:00Z`)) / 86_400_000) + 1;
 }
 
+// The report functions refuse a period longer than two years
+// (private.report_guard: to - from > 731 days), so a page checks first and
+// says so instead of failing.
+export const MAX_RANGE_SPAN_DAYS = 731;
+export function isRangeTooLong(range: DateRange): boolean {
+  return rangeDays(range) - 1 > MAX_RANGE_SPAN_DAYS;
+}
+
 // The previous period of the same length, as report_summary compares it
 // (a week against the week before; 1-31 March against the 31 days before).
 export function previousRange(range: DateRange): DateRange {
