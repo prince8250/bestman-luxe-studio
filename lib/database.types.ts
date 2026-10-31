@@ -1390,7 +1390,13 @@ export type Database = {
         Returns: Json
       }
       report_changes: {
-        Args: { p_from: string; p_limit?: number; p_to: string }
+        Args: {
+          p_actions?: string[]
+          p_actor_id?: string
+          p_from: string
+          p_limit?: number
+          p_to: string
+        }
         Returns: Json
       }
       report_day_close: {
@@ -1403,6 +1409,10 @@ export type Database = {
       }
       report_repeat_customers: {
         Args: { p_from: string; p_to: string }
+        Returns: Json
+      }
+      report_staff_detail: {
+        Args: { p_from: string; p_staff_id: string; p_to: string }
         Returns: Json
       }
       report_summary: { Args: { p_from: string; p_to: string }; Returns: Json }

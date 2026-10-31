@@ -962,6 +962,31 @@ begin
                                  where r ->> 'action' = 'staff_reassigned' and r ->> 'reason' = 'Test reassign'),
     'report_changes: today''s change log includes the reassignment', left(v_report::text, 300));
 
+  -- Spec 16: the change log filtered by type and account, in SQL.
+  v_report := pg_temp.call_as(v_owner, format($q$ select public.report_changes('%s', '%s', 500, array['staff_reassigned'], %L) $q$,
+    private.accra_today(), private.accra_today(), v_owner));
+  perform pg_temp.expect((v_report ->> 'count')::integer >= 1
+    and not exists (select 1 from jsonb_array_elements(v_report -> 'rows') r
+                    where r ->> 'action' <> 'staff_reassigned' or r ->> 'actor_name' <> 'Test Owner')
+    and exists (select 1 from jsonb_array_elements(v_report -> 'rows') r where r ->> 'reason' = 'Test reassign'),
+    'report_changes filters by type and account', left(v_report::text, 300));
+
+  -- Spec 16: one staff member's report reflects the reassignment.
+  v_report := pg_temp.call_as(v_owner, format($q$ select public.report_staff_detail(%L, '2000-01-03', '2000-01-09') $q$, v_kwame));
+  perform pg_temp.expect((v_report ->> 'services')::integer = 4 and (v_report ->> 'revenue')::integer = 22000
+    and jsonb_array_length(v_report -> 'lines') = 3
+    and (v_report -> 'by_service') @> jsonb_build_array(jsonb_build_object('service_id', v_wash, 'times', 3, 'revenue', 12000))
+    and (select count(*) from jsonb_array_elements(v_report -> 'lines') l where l ->> 'reassigned_from' = 'Test Kofi') = 1
+    and jsonb_array_length(v_report -> 'by_day') = 7 and v_report -> 'by_day' -> 4 @> '{"date": "2000-01-07", "services": 1}',
+    'report_staff_detail: Kwame''s week includes the line reassigned from Kofi, marked', left(v_report::text, 300));
+  v_report := pg_temp.call_as(v_owner, format($q$ select public.report_staff_detail(%L, '2000-01-03', '2000-01-09') $q$, v_kofi));
+  perform pg_temp.expect((v_report ->> 'services')::integer = 2 and (v_report ->> 'revenue')::integer = 14000
+    and jsonb_array_length(v_report -> 'moved_away') = 1 and v_report -> 'moved_away' -> 0 ->> 'to_name' = 'Test Kwame',
+    'report_staff_detail: Kofi''s week no longer counts the moved line and lists it as moved away', left(v_report::text, 300));
+  perform pg_temp.expect(pg_temp.run_as(v_counter, format($q$ select public.report_staff_detail(%L, '2000-01-03', '2000-01-09') $q$, v_kofi)) = 'not_authorized'
+    and pg_temp.run_as(v_owner, format($q$ select public.report_staff_detail(%L, '2000-01-03', '2000-01-09') $q$, gen_random_uuid())) = 'not_found',
+    'report_staff_detail is owner-only and refuses an unknown staff member');
+
   -- The day report: the owner any day; the counter only after that day is closed.
   v_report := pg_temp.call_as(v_counter, $q$ select public.report_day_close_export('2000-01-03') $q$);
   perform pg_temp.expect(v_report -> 'figures' @> '{"revenue": 18000, "sales_count": 2}'

@@ -14,6 +14,8 @@ interface RangePickerProps {
   range: RangePreset;
   from: string;
   to: string;
+  /** Other filters that belong to the same form (for example a staff choice). */
+  children?: React.ReactNode;
 }
 
 const control =
@@ -23,12 +25,13 @@ const control =
 // week, This month, Last 30 days, Custom). It lives in the URL, so a period
 // can be refreshed, bookmarked, or shared. A preset applies at once; custom
 // dates apply with Show.
-export function RangePicker({ action, presets, range, from, to }: RangePickerProps) {
+export function RangePicker({ action, presets, range, from, to, children }: RangePickerProps) {
   const formRef = React.useRef<HTMLFormElement>(null);
   const [preset, setPreset] = React.useState(range);
 
   return (
     <Form ref={formRef} action={action} className="flex flex-wrap items-center gap-2">
+      {children}
       <label className="relative">
         <span className="sr-only">Period</span>
         <CalendarRange aria-hidden className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-pos-text-muted" />
