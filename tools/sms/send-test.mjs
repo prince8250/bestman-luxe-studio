@@ -43,4 +43,6 @@ const result = await sendSms({
   message: "Bestman Luxe Studio: this is a test SMS from the POS setup. No reply needed.",
 });
 console.log(result);
-process.exit(result.ok ? 0 : 1);
+// exitCode, not exit(): exiting at once while the HTTPS connection is still
+// closing trips a libuv assertion on Windows.
+process.exitCode = result.ok ? 0 : 1;
