@@ -1316,6 +1316,7 @@ export type Database = {
       create_sale: { Args: { payload: Json }; Returns: Json }
       customer_detail: { Args: { p_customer_id: string }; Returns: Json }
       customer_lookup: { Args: { p_phone: string }; Returns: Json }
+      day_status: { Args: never; Returns: Json }
       decide_void_request: {
         Args: { p_approve: boolean; p_note: string; p_request_id: string }
         Returns: undefined
@@ -1438,6 +1439,7 @@ export type Database = {
         Returns: Json
       }
       search_sales: { Args: { p_filters?: Json }; Returns: Json }
+      unclosed_days: { Args: never; Returns: Json }
       update_service_prices: { Args: { changes: Json }; Returns: number }
       void_sale: {
         Args: { p_reason: string; p_sale_id: string }

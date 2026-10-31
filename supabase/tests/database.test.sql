@@ -133,6 +133,8 @@ declare
   v_c3 uuid;
   v_s4 uuid;
   v_s5 uuid;
+  v_d1 uuid;
+  v_d4 uuid;
   v_report jsonb;
   v_count bigint;
   v_close jsonb;
@@ -996,6 +998,94 @@ begin
   perform pg_temp.expect(v_message = 'not_closed', 'report_day_close_export: the counter gets nothing for a day that is not closed', v_message);
   v_report := pg_temp.call_as(v_owner, $q$ select public.report_day_close_export('2000-01-05') $q$);
   perform pg_temp.expect(v_report -> 'figures' @> '{"revenue": 13500}', 'report_day_close_export: the owner gets any day', left(v_report::text, 300));
+
+  -- ---------------------------------------------------------------------------
+  -- Close day (spec 17) on Tue 1 Feb 2000, a day nothing else touches:
+  --   D1 09:00  cut by Kofi    100.00 cash, then edited to 80.00 with 20.00 cash refunded
+  --   D2 11:00  wash x2 Kwame   80.00 MoMo
+  --   D3 14:00  cut by Kwame   100.00 card
+  --   D4 16:00  wash by Kofi    40.00 cash, then VOIDED (counts nowhere)
+  --   D5 17:00  cut by Kofi    100.00 cash
+  -- Opening float 150.00 (not the default 200.00, so it needs a reason).
+  -- Hand calculation: expected cash = 150 + 100 - 20 + 100 = 330.00; counted
+  -- 325.00, so the difference is -5.00. MoMo 80.00, card 100.00, 4 sales.
+  -- ---------------------------------------------------------------------------
+  perform pg_temp.as_db_owner();
+  v_d1 := pg_temp.add_sale('2000-02-01 09:00+00', v_counter, null,
+    jsonb_build_array(jsonb_build_object('service', v_cut, 'name', 'Test cut', 'staff', v_kofi, 'list', 10000, 'unit', 10000)),
+    '[{"method": "cash", "amount": 10000}]');
+  perform pg_temp.add_sale('2000-02-01 11:00+00', v_counter, null,
+    jsonb_build_array(jsonb_build_object('service', v_wash, 'name', 'Test wash', 'staff', v_kwame, 'list', 4000, 'unit', 4000, 'qty', 2)),
+    '[{"method": "momo", "amount": 8000}]');
+  perform pg_temp.add_sale('2000-02-01 14:00+00', v_counter, null,
+    jsonb_build_array(jsonb_build_object('service', v_cut, 'name', 'Test cut', 'staff', v_kwame, 'list', 10000, 'unit', 10000)),
+    '[{"method": "card", "amount": 10000}]');
+  v_d4 := pg_temp.add_sale('2000-02-01 16:00+00', v_counter, null,
+    jsonb_build_array(jsonb_build_object('service', v_wash, 'name', 'Test wash', 'staff', v_kofi, 'list', 4000, 'unit', 4000)),
+    '[{"method": "cash", "amount": 4000}]');
+  perform pg_temp.add_sale('2000-02-01 17:00+00', v_counter, null,
+    jsonb_build_array(jsonb_build_object('service', v_cut, 'name', 'Test cut', 'staff', v_kofi, 'list', 10000, 'unit', 10000)),
+    '[{"method": "cash", "amount": 10000}]');
+  set constraints all immediate;
+  set constraints all deferred;
+
+  v_message := pg_temp.run_as(v_owner, format($q$ select public.edit_sale_item((select id from public.sale_items where sale_id = %L),
+    '{"unit_price": 8000}'::jsonb, '{"method": "cash", "amount": -2000}'::jsonb, 'Shorter cut, refunded') $q$, v_d1));
+  v_message := v_message || '/' || pg_temp.run_as(v_owner, format($q$ select public.void_sale(%L, 'Test void') $q$, v_d4));
+  perform pg_temp.expect(v_message = 'OK/OK', 'close day fixtures: D1 refunded 20.00 cash, D4 voided', v_message);
+
+  perform pg_temp.as_db_owner();
+  perform pg_temp.expect(private.unclosed_days('2000-02-03', 14) = '[{"business_date": "2000-02-01", "sales_count": 4}]'::jsonb
+    and (private.day_status('2000-02-01') ->> 'open_since')::timestamptz = '2000-02-01 09:00+00'
+    and private.day_status('2000-02-01') ->> 'closed_at' is null,
+    'before the close: 1 Feb is listed as not closed (4 paid sales), open since its first sale',
+    private.unclosed_days('2000-02-03', 14)::text || ' ' || private.day_status('2000-02-01')::text);
+
+  v_close := pg_temp.call_as(v_counter, $q$
+    select public.close_day('2000-02-01', 32500, 8000, 15000, 'Test close', 'Change for the morning') $q$);
+  perform pg_temp.expect(
+    v_close @> '{"opening_float": 15000, "expected_cash": 33000, "counted_cash": 32500, "cash_difference": -500,
+                 "cash": 18000, "momo": 8000, "card": 10000, "momo_reported": 8000, "sales_count": 4}'
+    and exists (select 1 from public.day_closes where id = (v_close ->> 'day_close_id')::uuid
+                and expected_cash = 33000 and counted_cash = 32500 and cash_difference = -500
+                and expected_momo = 8000 and expected_card = 10000 and sales_count = 4
+                and opening_float_reason = 'Change for the morning' and closed_by = v_counter),
+    'close_day on a day with cash, MoMo, card, a refund, and a void: expected 330.00, counted 325.00, difference -5.00 (hand-checked)',
+    v_close::text);
+  perform pg_temp.expect(
+    exists (select 1 from public.owner_alerts where occurrence_key = 'cash_difference:' || (v_close ->> 'day_close_id')
+            and (payload ->> 'cash_difference')::integer = -500)
+    and exists (select 1 from public.owner_alerts where occurrence_key = 'day_summary:' || (v_close ->> 'day_close_id')
+                and payload ->> 'business_date' = '2000-02-01'),
+    'the close queues the day summary and, beyond the tolerance, a cash difference alert');
+
+  perform pg_temp.as_db_owner();
+  perform pg_temp.expect(private.unclosed_days('2000-02-03', 14) = '[]'::jsonb
+    and private.day_status('2000-02-01') @> '{"closed_by": "Test Counter"}'
+    and private.day_status('2000-02-01') ->> 'closed_at' is not null,
+    'after the close: no day left open, and the status says who closed it and when',
+    private.day_status('2000-02-01')::text);
+
+  v_message := pg_temp.run_as(v_counter, $q$ select public.close_day('2000-02-01', 32500, null, null, null) $q$)
+    || '/' || pg_temp.run_as(v_owner, $q$ select public.reopen_day('2000-02-01', '  ') $q$)
+    || '/' || pg_temp.run_as(v_counter, $q$ select public.reopen_day('2000-02-01', 'Recount') $q$);
+  perform pg_temp.expect(v_message = 'already_closed/reason_required/not_authorized',
+    'a closed day cannot be closed again; reopening needs a reason and the owner', v_message);
+  v_message := pg_temp.run_as(v_owner, $q$ select public.reopen_day('2000-02-01', 'Recount the drawer') $q$)
+    || '/' || pg_temp.run_as(v_counter, $q$ select public.close_day('2000-02-01', 33000, 8000, 15000, null, 'Change for the morning') $q$);
+  perform pg_temp.expect(v_message = 'OK/OK'
+    and exists (select 1 from public.audit_log where action = 'day_reopened' and reason = 'Recount the drawer'
+                and after ->> 'business_date' = '2000-02-01' and actor_id = v_owner)
+    and (select count(*) from public.day_closes where business_date = '2000-02-01') = 2
+    and (select count(*) from public.day_closes where business_date = '2000-02-01' and reopened_at is null and cash_difference = 0) = 1,
+    'the owner reopens with a reason (logged), the day is closed again, and both closes stay in history', v_message);
+
+  perform pg_temp.expect(pg_temp.run_as(v_counter, 'select public.unclosed_days()') = 'OK'
+    and (pg_temp.call_as(v_counter, 'select public.day_status()') ->> 'business_date')::date = private.accra_today()
+    and pg_temp.run_as(null, 'select public.unclosed_days()') like 'permission denied%'
+    and pg_temp.run_as(null, 'select public.day_status()') like 'permission denied%'
+    and pg_temp.run_as(v_counter, $q$ select private.unclosed_days('2000-02-03', 14) $q$) like 'permission denied%',
+    'unclosed_days and day_status are for POS users only (dates and times, never money)');
 
   -- Owner only, and sane ranges.
   v_message := pg_temp.run_as(v_counter, $q$ select public.report_summary('2000-01-03', '2000-01-09') $q$)

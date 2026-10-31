@@ -59,3 +59,13 @@ The POS needs the internet. When it cannot be reached, keep selling on paper and
 4. Past sales count on the day they really happened, are marked "Past sale" in the sales list, and the owner is told. The counter can go back as many days as Settings allows (3 by default); the owner up to 14 days.
 
 Recommended (no setup in the POS): a backup mobile internet device (MiFi) for when the main internet fails, and a small UPS for the PC, the router, and the receipt printer, so a short power cut does not stop the counter.
+
+## Closing the day (spec 17)
+
+1. At closing time, open **Close day** (the button on the day card in the sidebar). Count every note and coin in the drawer, the opening float included, and type the total. Add the MoMo total shown on the MoMo phone for the day if you have it, and a note if something happened.
+2. The POS does **not** show what it expects until the count is saved. This is on purpose: when the expected number is on the screen, people count towards it. Count first, then compare.
+3. After **Close the day**, the screen shows what was counted, what the POS expected (opening float + cash sales, minus cash refunds), and the difference: green when it matches, red when it does not. It also shows the money per payment method and the services per staff member: compare them with each person's STAFF COPY slips.
+4. **Print close slip** prints the figures on the receipt printer, with lines for "Counted by" and "Checked by". Keep the slips.
+5. The day report downloads to the PC by itself (an HTML file to read or print and a CSV file for Excel), as an extra copy next to the automatic backups. The first time, Chrome may ask to **allow this site to download multiple files**: choose Allow.
+6. A closed day stays closed. If the count was wrong, only the owner can **Reopen day** (with a reason); the first close stays in the history and the day is counted and closed again. A day that was missed can be closed the next morning: choose it in the list at the top of Close day.
+7. The owner is told about every close (the day summary) and about any cash difference (when SMS is set up).

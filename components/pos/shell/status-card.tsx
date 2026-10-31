@@ -3,14 +3,15 @@ import { DatabaseBackup, Lock } from "lucide-react";
 
 import type { PosUser } from "@/lib/auth/types";
 import { isBackupStale, type BackupKind } from "@/lib/backups/status";
+import { loadDayStatus } from "@/lib/close-day/data";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { accraDate, accraDayStart, formatAccraDayTime, formatAccraTime } from "@/lib/time";
+import { formatAccraDayTime, formatAccraTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
 // The card at the bottom of the sidebar: backup health for the owner, the
 // day's status for the counter (ui-context.md, "Mapping The Reference").
 export async function StatusCard({ user }: { user: PosUser }) {
-  return user.role === "owner" ? <BackupStatusCard /> : <DayStatusCard user={user} />;
+  return user.role === "owner" ? <BackupStatusCard /> : <DayStatusCard />;
 }
 
 // Backup health at a glance; the full Backups page is spec 22.
@@ -57,37 +58,24 @@ async function BackupStatusCard() {
   );
 }
 
-async function DayStatusCard({ user }: { user: PosUser }) {
-  const supabase = await createSupabaseServerClient();
-  const today = accraDate();
-  const [{ data: close }, { data: firstSignIn }] = await Promise.all([
-    supabase
-      .from("day_closes")
-      .select("closed_at")
-      .eq("business_date", today)
-      .is("reopened_at", null)
-      .maybeSingle(),
-    supabase
-      .from("sign_in_events")
-      .select("signed_in_at")
-      .eq("profile_id", user.id)
-      .gte("signed_in_at", accraDayStart(today).toISOString())
-      .order("signed_in_at", { ascending: true })
-      .limit(1)
-      .maybeSingle(),
-  ]);
+// "Day open since 08:12" (the first sign-in or sale of the day, by anyone) or
+// "Day closed at 20:41" (spec 17, day_status).
+async function DayStatusCard() {
+  const status = await loadDayStatus(await createSupabaseServerClient());
+  const closed = status.closed_at !== null;
 
   return (
     <div className="rounded-[16px] border border-pos-border bg-pos-bg p-4">
-      <p className="text-sm font-medium">{close ? "Day closed" : "Day open"}</p>
-      <p className="mt-0.5 text-xs text-pos-text-muted">
-        {close
-          ? `Closed at ${formatAccraTime(close.closed_at)}`
-          : firstSignIn
-            ? `Open since ${formatAccraTime(firstSignIn.signed_in_at)}`
-            : "Not signed in today yet"}
+      <p className="flex items-center gap-2 text-sm font-medium">
+        <span aria-hidden className={cn("h-2 w-2 rounded-full", closed ? "bg-pos-text-muted" : "bg-pos-up")} />
+        {status.closed_at
+          ? `Day closed at ${formatAccraTime(status.closed_at)}`
+          : status.open_since
+            ? `Day open since ${formatAccraTime(status.open_since)}`
+            : "Day open"}
       </p>
-      {!close && (
+      {status.closed_at && status.closed_by && <p className="mt-0.5 text-xs text-pos-text-muted">By {status.closed_by}</p>}
+      {!closed && (
         <Link
           href="/pos/close-day"
           className="mt-3 flex min-h-11 items-center justify-center gap-2 rounded-[10px] border border-pos-border bg-pos-surface text-sm font-medium hover:bg-pos-subtle focus-visible:outline-2 focus-visible:outline-pos-accent"
