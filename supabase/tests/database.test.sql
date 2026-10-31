@@ -1165,7 +1165,7 @@ begin
   perform pg_temp.as_db_owner();
   update public.owner_alerts set sms_status = 'skipped' where sms_status = 'pending';
   update public.owner_alerts set sms_sent_at = null where sms_sent_at is not null;
-  update public.studio_settings set owner_alert_phone = '+233257178639', daily_sms_cap = 2,
+  update public.studio_settings set owner_alert_phone = '+233209999077', daily_sms_cap = 2,
     alert_settings = alert_settings || '{"large_override": false}'::jsonb;
   perform private.create_owner_alert('large_override', null, '{"receipt_no": "T-0"}', 'test19:off');
   perform private.create_owner_alert('void_requested', null, '{"receipt_no": "T-1", "total": 1000}', 'test19:a');
@@ -1181,7 +1181,7 @@ begin
   v_alerts := public.claim_owner_alerts(20);
   perform pg_temp.expect(jsonb_array_length(v_alerts) = 2
     and v_alerts -> 0 ->> 'kind' = 'void_requested' and v_alerts -> 1 ->> 'kind' = 'backdated_sale'
-    and v_alerts -> 0 ->> 'phone' = '+233257178639' and v_alerts -> 0 #>> '{payload,receipt_no}' = 'T-1'
+    and v_alerts -> 0 ->> 'phone' = '+233209999077' and v_alerts -> 0 #>> '{payload,receipt_no}' = 'T-1'
     and (select sms_status from public.owner_alerts where occurrence_key = 'test19:off') = 'disabled'
     and (select sms_status || ':' || sms_error from public.owner_alerts where occurrence_key = 'test19:old') = 'skipped:Too old to send'
     and (select sms_status from public.owner_alerts where occurrence_key = 'test19:c') = 'throttled'

@@ -30,11 +30,17 @@ describe("closeDaySchema", () => {
     });
   });
 
-  it("refuses a missing count, a bad amount, or an impossible date", () => {
-    expect(closeDaySchema(0).safeParse({ ...base, counted: "" }).success).toBe(false);
-    expect(closeDaySchema(0).safeParse({ ...base, counted: "-5" }).success).toBe(false);
-    expect(closeDaySchema(0).safeParse({ ...base, momo: "abc" }).success).toBe(false);
-    expect(closeDaySchema(0).safeParse({ ...base, date: "2026-02-31" }).success).toBe(false);
+  it("refuses a missing count, a bad amount, or an impossible date, naming the field", () => {
+    // The default float matches base.float (200), so only the field under test is wrong.
+    const failedFields = (input: Partial<typeof base>) => {
+      const result = closeDaySchema(20000).safeParse({ ...base, ...input });
+      return result.success ? [] : result.error.issues.map((issue) => issue.path.join("."));
+    };
+    expect(failedFields({})).toEqual([]);
+    expect(failedFields({ counted: "" })).toEqual(["counted"]);
+    expect(failedFields({ counted: "-5" })).toEqual(["counted"]);
+    expect(failedFields({ momo: "abc" })).toEqual(["momo"]);
+    expect(failedFields({ date: "2026-02-31" })).toEqual(["date"]);
   });
 });
 

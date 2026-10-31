@@ -3,7 +3,7 @@ import { DatabaseBackup, Lock } from "lucide-react";
 
 import type { PosUser } from "@/lib/auth/types";
 import { isBackupStale, type BackupKind } from "@/lib/backups/status";
-import { loadDayStatus } from "@/lib/close-day/data";
+import { loadDayStatus, type DayStatus } from "@/lib/close-day/data";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { formatAccraDayTime, formatAccraTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
@@ -59,22 +59,30 @@ async function BackupStatusCard() {
 }
 
 // "Day open since 08:12" (the first sign-in or sale of the day, by anyone) or
-// "Day closed at 20:41" (spec 17, day_status).
+// "Day closed at 20:41" (spec 17, day_status). If the status cannot be read
+// (the internet dropped for a moment), the card says "Day open" and keeps the
+// Close day button, instead of breaking every page around it.
 async function DayStatusCard() {
-  const status = await loadDayStatus(await createSupabaseServerClient());
-  const closed = status.closed_at !== null;
+  let status: DayStatus | null = null;
+  try {
+    status = await loadDayStatus(await createSupabaseServerClient());
+  } catch (error) {
+    console.error("day status could not load", error instanceof Error ? error.message : error);
+  }
+  const closedAt = status?.closed_at ?? null;
+  const closed = closedAt !== null;
 
   return (
     <div className="rounded-[16px] border border-pos-border bg-pos-bg p-4">
       <p className="flex items-center gap-2 text-sm font-medium">
         <span aria-hidden className={cn("h-2 w-2 rounded-full", closed ? "bg-pos-text-muted" : "bg-pos-up")} />
-        {status.closed_at
-          ? `Day closed at ${formatAccraTime(status.closed_at)}`
-          : status.open_since
+        {closedAt
+          ? `Day closed at ${formatAccraTime(closedAt)}`
+          : status?.open_since
             ? `Day open since ${formatAccraTime(status.open_since)}`
             : "Day open"}
       </p>
-      {status.closed_at && status.closed_by && <p className="mt-0.5 text-xs text-pos-text-muted">By {status.closed_by}</p>}
+      {closedAt && status?.closed_by && <p className="mt-0.5 text-xs text-pos-text-muted">By {status.closed_by}</p>}
       {!closed && (
         <Link
           href="/pos/close-day"
