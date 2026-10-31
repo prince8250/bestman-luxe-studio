@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { dbErrorMessage } from "@/lib/actions/db-errors";
 import { fail, ok, runPosAction, type ActionResult } from "@/lib/actions/result";
+import { sendOwnerAlertsLater } from "@/lib/alerts/send";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 // Voids and void requests (spec 10). Each action checks the role first
@@ -17,8 +18,10 @@ const reason = z.string().trim().min(1, "Give a reason.").max(500, "Keep the rea
 const note = z.string().trim().max(500, "Keep the note under 500 characters.");
 
 function refresh() {
-  // The sales list, the sale pages, and the void requests list.
+  // The sales list, the sale pages, the void requests list, and the owner's
+  // activity feed (where requests are approved from a phone).
   revalidatePath("/pos/sales", "layout");
+  revalidatePath("/pos/activity");
 }
 
 function firstIssue(error: z.ZodError): string {
@@ -47,6 +50,7 @@ export async function requestVoidAction(saleId: string, rawReason: string): Prom
     const { error } = await supabase.rpc("request_void", { p_sale_id: parsed.data.saleId, p_reason: parsed.data.reason });
     if (error) return fail(dbErrorMessage(error, "request_void failed"));
     refresh();
+    sendOwnerAlertsLater(); // the owner hears about the request
     return ok(undefined);
   });
 }

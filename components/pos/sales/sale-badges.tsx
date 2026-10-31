@@ -2,9 +2,10 @@ import type { ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 
-type Tone = "down" | "warning" | "muted" | "accent";
+type Tone = "up" | "down" | "warning" | "muted" | "accent";
 
 const TONE: Record<Tone, string> = {
+  up: "bg-pos-up-soft text-pos-up",
   down: "bg-pos-down-soft text-pos-down",
   warning: "bg-pos-warning-soft text-pos-warning",
   muted: "bg-pos-subtle text-pos-text-muted",

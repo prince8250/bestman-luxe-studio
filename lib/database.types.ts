@@ -1293,6 +1293,16 @@ export type Database = {
       }
     }
     Functions: {
+      activity_feed: {
+        Args: {
+          p_actor?: string
+          p_before?: string
+          p_limit?: number
+          p_types?: string[]
+        }
+        Returns: Json
+      }
+      activity_unread_count: { Args: never; Returns: number }
       cancel_appointment: {
         Args: { p_appointment_id: string; p_reason: string }
         Returns: undefined
@@ -1301,6 +1311,7 @@ export type Database = {
         Args: { p_request_id: string }
         Returns: undefined
       }
+      claim_owner_alerts: { Args: { p_limit?: number }; Returns: Json }
       close_day: {
         Args: {
           p_business_date: string
@@ -1331,7 +1342,12 @@ export type Database = {
         Returns: Json
       }
       end_user_sessions: { Args: { p_user_id: string }; Returns: number }
+      finish_owner_alert: {
+        Args: { p_error?: string; p_id: string; p_ok: boolean }
+        Returns: undefined
+      }
       mark_no_show: { Args: { p_appointment_id: string }; Returns: undefined }
+      owner_daily_check: { Args: { p_date: string }; Returns: Json }
       rate_limit_clear: { Args: { p_key: string }; Returns: undefined }
       rate_limit_count: {
         Args: { p_key: string; p_window_seconds: number }

@@ -10,6 +10,8 @@ import { homePathFor, type PosRole } from "@/lib/auth/types";
 import { isActivePath, NEW_SALE_HREF, sidebarItems } from "@/lib/pos/navigation";
 import { cn } from "@/lib/utils";
 
+import { UnreadBadge, useActivityUnread } from "./activity-unread";
+
 interface SidebarProps {
   role: PosRole;
   initialCollapsed: boolean;
@@ -23,6 +25,7 @@ const labelClass = "hidden lg:inline lg:group-data-[collapsed=true]/sidebar:hidd
 export function Sidebar({ role, initialCollapsed, statusCard }: SidebarProps) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = React.useState(initialCollapsed);
+  const unread = useActivityUnread();
 
   function toggle() {
     const next = !collapsed;
@@ -85,7 +88,10 @@ export function Sidebar({ role, initialCollapsed, statusCard }: SidebarProps) {
                     active ? "bg-pos-accent-soft text-pos-accent" : "text-pos-text hover:bg-pos-subtle",
                   )}
                 >
-                  <Icon className="h-5 w-5 shrink-0" />
+                  <span className="relative shrink-0">
+                    <Icon className="h-5 w-5" />
+                    {item.key === "activity" && <UnreadBadge count={unread} />}
+                  </span>
                   <span className={labelClass}>{item.label}</span>
                 </Link>
                 {item.children && active && (

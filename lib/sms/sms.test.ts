@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ARKESEL_SEND_URL, sendWithArkesel } from "./arkesel";
 import { sendToConsole } from "./console";
 import { plainSmsText, smsLength } from "./length";
-import { bookingConfirmationSms } from "./templates";
+import { bookingConfirmationSms, ownerAlertSms } from "./templates";
 import { maskPhone } from "./types";
 
 const env = vi.hoisted(() => ({ value: { SMS_MODE: "console", SMS_API_KEY: undefined, SMS_SENDER_ID: undefined } as Record<string, unknown> }));
@@ -162,5 +162,77 @@ describe("sendSms", () => {
       .mockResolvedValue(new Response(JSON.stringify({ status: "success", data: [{ recipient: "233244565866", id: "x1" }] })));
     expect(await sendSms({ to: "0244565866", message: "Hello" })).toMatchObject({ ok: true, mode: "live", provider: "arkesel", id: "x1" });
     expect(fetchMock).toHaveBeenCalledOnce();
+  });
+});
+
+describe("ownerAlertSms", () => {
+  const cases: [Parameters<typeof ownerAlertSms>[0], string][] = [
+    [
+      { kind: "void_requested", payload: { receipt_no: "BLS-000412", total: 15000, reason: "Customer left", by: "Abena" } },
+      'POS: Abena asks to void BLS-000412 (GHS 150.00): "Customer left". Approve or reject in Activity.',
+    ],
+    [
+      { kind: "cash_difference", payload: { business_date: "2026-10-30", counted_cash: 142500, expected_cash: 143000, cash_difference: -500, by: "Abena" } },
+      "POS: cash short by GHS 5.00 on Fri 30 Oct. Counted GHS 1,425.00, expected GHS 1,430.00. Closed by Abena.",
+    ],
+    [
+      { kind: "backdated_sale", payload: { receipt_no: "BLS-000254", total: 8000, paid_at: "2026-10-29T14:30:00Z", by: "Test Owner" } },
+      "POS: Test Owner entered a past sale BLS-000254 (GHS 80.00) dated Thu 29 Oct, 14:30.",
+    ],
+    [
+      {
+        kind: "large_override",
+        payload: {
+          receipt_no: "BLS-000300",
+          by: "Abena",
+          lines: [
+            { item_name: "Haircut", list_price: 10000, unit_price: 4000, quantity: 1, reason: "Loyal customer" },
+            { item_name: "Wash", list_price: 4000, unit_price: 2000, quantity: 2, reason: "Promo" },
+          ],
+        },
+      },
+      "POS: big price change on BLS-000300 by Abena: Haircut GHS 100.00 -> GHS 40.00 (Loyal customer), and 1 more.",
+    ],
+    [
+      { kind: "after_close_sale", payload: { receipt_no: "BLS-000255", total: 15000, business_date: "2026-10-30", by: "Abena" } },
+      "POS: sale after the day was closed: BLS-000255 (GHS 150.00) by Abena on Fri 30 Oct.",
+    ],
+    [
+      { kind: "backup_stale", payload: { business_date: "2026-10-30", last_backup_at: "2026-10-28T18:00:00Z" } },
+      "POS: no PC backup for Fri 30 Oct; the last one was Wed 28 Oct, 18:00. Check the backup on the studio PC.",
+    ],
+  ];
+
+  it.each(cases)("writes the %o alert", (alert, expected) => {
+    const text = ownerAlertSms(alert);
+    expect(text).toBe(expected);
+    expect(smsLength(text).encoding).toBe("gsm7");
+  });
+
+  it("sums up the closed day: revenue, services, cash / MoMo / card, difference, voids, waiting requests", () => {
+    const text = ownerAlertSms({
+      kind: "day_summary",
+      payload: {
+        business_date: "2026-10-30", closed_by: "Abena", revenue: 145000, services_count: 10, cash: 118000, momo: 27000, card: 0,
+        cash_difference: 0, voids_count: 3, pending_void_requests: 1,
+      },
+    });
+    expect(text).toBe(
+      "POS: Fri 30 Oct closed by Abena. Revenue GHS 1,450.00, 10 services. Cash GHS 1,180.00, MoMo GHS 270.00, card GHS 0.00. " +
+        "Cash difference GHS 0.00. Voids 3, void requests waiting 1.",
+    );
+    expect(smsLength(text).segments).toBeLessThanOrEqual(2);
+  });
+
+  it("names a day that was not closed, with its figures", () => {
+    expect(
+      ownerAlertSms({ kind: "day_not_closed", payload: { business_date: "2026-10-30", sales_count: 8, revenue: 145000, cash: 118000, momo: 27000, card: 0 } }),
+    ).toBe("POS: Fri 30 Oct was not closed. 8 sales, revenue GHS 1,450.00 (cash GHS 1,180.00, MoMo GHS 270.00, card GHS 0.00). Please close the day.");
+  });
+
+  it("keeps long reasons short and typographic quotes plain", () => {
+    const text = ownerAlertSms({ kind: "void_requested", payload: { receipt_no: "BLS-1", total: 100, reason: `Customer${curlyApostrophe}s ${"x".repeat(200)}`, by: "Abena" } });
+    expect(smsLength(text)).toMatchObject({ encoding: "gsm7" });
+    expect(text.length).toBeLessThan(160);
   });
 });

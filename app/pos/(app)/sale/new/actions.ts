@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { dbErrorMessage } from "@/lib/actions/db-errors";
+import { sendOwnerAlertsLater } from "@/lib/alerts/send";
 import { fail, ok, runPosAction, type ActionResult } from "@/lib/actions/result";
 import { normalizePhone } from "@/lib/phone";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -106,6 +107,9 @@ export async function confirmSaleAction(input: unknown): Promise<ActionResult<Co
     };
     revalidatePath("/pos/today");
     revalidatePath("/pos/sales");
+    revalidatePath("/pos/activity");
+    // A past sale, a sale after close, or a big price change queued an owner alert.
+    sendOwnerAlertsLater();
     return ok({
       saleId: result.sale_id,
       receiptNo: result.receipt_no,

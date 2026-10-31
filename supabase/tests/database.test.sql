@@ -136,6 +136,7 @@ declare
   v_d1 uuid;
   v_d4 uuid;
   v_report jsonb;
+  v_alerts jsonb;
   v_count bigint;
   v_close jsonb;
   v_slot timestamptz := date_trunc('hour', now()) + interval '3 days';
@@ -158,6 +159,11 @@ begin
 
   update public.studio_settings set max_counter_discount_percent = 20, counter_backdate_days = 3,
     default_opening_float = 20000, cash_difference_tolerance = 0, override_alert_threshold = 5000;
+
+  -- The tests start from an open day. If today was really closed on this
+  -- database, that close is set aside here (rolled back with everything else).
+  update public.day_closes set reopened_at = now(), reopened_by = v_owner, reopen_reason = 'Test setup: start from an open day'
+    where business_date = private.accra_today() and reopened_at is null;
 
   insert into public.service_categories (name) values ('Test category') returning id into v_category;
   insert into public.services (category_id, name, price, duration_minutes)
@@ -1101,6 +1107,141 @@ begin
     'visitors are refused, and a backwards or over-long range is refused');
   perform pg_temp.expect(pg_temp.run_as(v_owner, $q$ select private.r_summary('2000-01-03', '2000-01-09') $q$) like 'permission denied%',
     'the private report builders cannot be called directly');
+
+  -- ---------------------------------------------------------------------------
+  -- Spec 19: the owner's activity feed
+  -- ---------------------------------------------------------------------------
+  perform pg_temp.as_db_owner();
+  insert into public.sign_in_events (profile_id) values (v_counter);
+  insert into public.backup_runs (kind, status, message) values ('daily_pc', 'failed', 'Test backup failure');
+
+  v_report := pg_temp.call_as(v_owner, $q$ select public.activity_feed(null, 200) $q$);
+  perform pg_temp.expect(
+    exists (select 1 from jsonb_array_elements(v_report -> 'events') e
+            where e ->> 'type' = 'sign_in' and e ->> 'actor_name' = 'Test Counter')
+    and exists (select 1 from jsonb_array_elements(v_report -> 'events') e
+                where e ->> 'type' = 'backup_failed' and (e ->> 'unusual')::boolean and e #>> '{data,message}' = 'Test backup failure')
+    and exists (select 1 from jsonb_array_elements(v_report -> 'events') e
+                where e ->> 'type' = 'staff_reassigned' and e #>> '{data,reason}' = 'Test reassign' and e ->> 'actor_name' = 'Test Owner')
+    and exists (select 1 from jsonb_array_elements(v_report -> 'events') e
+                where e ->> 'type' = 'void_requested' and (e ->> 'unusual')::boolean and e ->> 'actor_name' = 'Test Counter')
+    and exists (select 1 from jsonb_array_elements(v_report -> 'events') e where e ->> 'type' = 'sale_voided')
+    and exists (select 1 from jsonb_array_elements(v_report -> 'events') e where e ->> 'type' = 'day_reopened')
+    and exists (select 1 from jsonb_array_elements(v_report -> 'events') e
+                where e ->> 'type' = 'sale' and e #>> '{data,receipt_no}' is not null and e ->> 'actor_name' is not null),
+    'activity_feed: sales, reassignments, void requests, voids, reopened days, counter sign-ins, and failed backups, with who did each',
+    left(v_report::text, 300));
+
+  v_report := pg_temp.call_as(v_owner, format($q$ select public.activity_feed(null, 50, array['sign_ins'], %L) $q$, v_counter));
+  perform pg_temp.expect(jsonb_array_length(v_report -> 'events') >= 1
+    and not exists (select 1 from jsonb_array_elements(v_report -> 'events') e
+                    where e ->> 'type' <> 'sign_in' or e ->> 'actor_id' <> v_counter::text),
+    'activity_feed filters by type and by account', left(v_report::text, 300));
+  v_report := pg_temp.call_as(v_owner, $q$ select public.activity_feed(null, 200, array['void_requests']) $q$);
+  perform pg_temp.expect(jsonb_array_length(v_report -> 'events') >= 1
+    and not exists (select 1 from jsonb_array_elements(v_report -> 'events') e where e ->> 'type' not like 'void_request%')
+    and jsonb_typeof(v_report -> 'pending_requests') = 'array',
+    'activity_feed: the void requests filter, and the pending requests list for the top of the page', left(v_report::text, 300));
+
+  perform pg_temp.as_db_owner();
+  update public.profiles set activity_seen_at = now() - interval '1 minute' where id = v_owner;
+  v_count := (pg_temp.call_as(v_owner, 'select to_jsonb(public.activity_unread_count())') #>> '{}')::bigint;
+  perform pg_temp.as_db_owner();
+  update public.profiles set activity_seen_at = now() + interval '1 minute' where id = v_owner;
+  perform pg_temp.expect(v_count >= 1
+    and (pg_temp.call_as(v_owner, 'select to_jsonb(public.activity_unread_count())') #>> '{}')::bigint = 0,
+    'activity_unread_count counts what happened since the owner last looked', v_count::text);
+
+  v_message := pg_temp.run_as(v_counter, 'select public.activity_feed()')
+    || '/' || pg_temp.run_as(v_counter, 'select public.activity_unread_count()')
+    || '/' || pg_temp.run_as(v_owner, 'select private.activity_events(null, null, 10, null, null)');
+  perform pg_temp.expect(v_message like 'not_authorized/not_authorized/permission denied%',
+    'a counter user cannot read the feed, and nobody calls its private builder', v_message);
+
+  -- ---------------------------------------------------------------------------
+  -- Spec 19: sending owner alerts (the service role's sender). Earlier pending
+  -- alerts are set aside so the counts below are exact.
+  -- ---------------------------------------------------------------------------
+  perform pg_temp.as_db_owner();
+  update public.owner_alerts set sms_status = 'skipped' where sms_status = 'pending';
+  update public.owner_alerts set sms_sent_at = null where sms_sent_at is not null;
+  update public.studio_settings set owner_alert_phone = '+233257178639', daily_sms_cap = 2,
+    alert_settings = alert_settings || '{"large_override": false}'::jsonb;
+  perform private.create_owner_alert('large_override', null, '{"receipt_no": "T-0"}', 'test19:off');
+  perform private.create_owner_alert('void_requested', null, '{"receipt_no": "T-1", "total": 1000}', 'test19:a');
+  perform private.create_owner_alert('backdated_sale', null, '{"receipt_no": "T-2", "total": 2000}', 'test19:b');
+  perform private.create_owner_alert('after_close_sale', null, '{"receipt_no": "T-3", "total": 3000}', 'test19:c');
+  perform private.create_owner_alert('cash_difference', null, '{"cash_difference": -500}', 'test19:old');
+  update public.owner_alerts set created_at = now() - interval '7 hours' where occurrence_key = 'test19:old';
+  update public.owner_alerts set created_at = now() - interval '4 minutes' where occurrence_key = 'test19:off';
+  update public.owner_alerts set created_at = now() - interval '3 minutes' where occurrence_key = 'test19:a';
+  update public.owner_alerts set created_at = now() - interval '2 minutes' where occurrence_key = 'test19:b';
+  update public.owner_alerts set created_at = now() - interval '1 minute' where occurrence_key = 'test19:c';
+
+  v_alerts := public.claim_owner_alerts(20);
+  perform pg_temp.expect(jsonb_array_length(v_alerts) = 2
+    and v_alerts -> 0 ->> 'kind' = 'void_requested' and v_alerts -> 1 ->> 'kind' = 'backdated_sale'
+    and v_alerts -> 0 ->> 'phone' = '+233257178639' and v_alerts -> 0 #>> '{payload,receipt_no}' = 'T-1'
+    and (select sms_status from public.owner_alerts where occurrence_key = 'test19:off') = 'disabled'
+    and (select sms_status || ':' || sms_error from public.owner_alerts where occurrence_key = 'test19:old') = 'skipped:Too old to send'
+    and (select sms_status from public.owner_alerts where occurrence_key = 'test19:c') = 'throttled'
+    and (select count(*) from public.owner_alerts where occurrence_key in ('test19:a', 'test19:b')
+         and sms_status = 'failed' and sms_error = 'Sending') = 2,
+    'claim_owner_alerts: oldest first up to the daily cap (2); switched-off kinds disabled, beyond the cap throttled, too old skipped',
+    left(v_alerts::text, 300));
+  perform pg_temp.expect(public.claim_owner_alerts(20) = '[]'::jsonb,
+    'a second claim finds nothing: an alert is never sent twice');
+
+  perform public.finish_owner_alert((v_alerts -> 0 ->> 'id')::uuid, true);
+  perform public.finish_owner_alert((v_alerts -> 1 ->> 'id')::uuid, false, 'Arkesel: Insufficient balance');
+  perform public.finish_owner_alert((v_alerts -> 0 ->> 'id')::uuid, false, 'Late duplicate result');
+  perform pg_temp.expect(
+    (select sms_status from public.owner_alerts where occurrence_key = 'test19:a' and sms_sent_at is not null and sms_error is null) = 'sent'
+    and (select sms_status || ':' || sms_error from public.owner_alerts where occurrence_key = 'test19:b') = 'failed:Arkesel: Insufficient balance',
+    'finish_owner_alert records sent or failed once; a late second result changes nothing');
+
+  -- One SMS sent today and a cap of 2: the next alert goes, the one after is throttled.
+  perform private.create_owner_alert('void_requested', null, '{"receipt_no": "T-4"}', 'test19:d');
+  v_alerts := public.claim_owner_alerts(20);
+  perform private.create_owner_alert('void_requested', null, '{"receipt_no": "T-5"}', 'test19:e');
+  perform public.claim_owner_alerts(20);
+  update public.studio_settings set owner_alert_phone = null;
+  perform private.create_owner_alert('void_requested', null, '{"receipt_no": "T-6"}', 'test19:f');
+  perform public.claim_owner_alerts(20);
+  perform pg_temp.expect(jsonb_array_length(v_alerts) = 1 and v_alerts -> 0 #>> '{payload,receipt_no}' = 'T-4'
+    and (select sms_status from public.owner_alerts where occurrence_key = 'test19:e') = 'throttled'
+    and (select sms_status || ':' || sms_error from public.owner_alerts where occurrence_key = 'test19:f') = 'skipped:No owner phone in Settings',
+    'the daily cap counts sent and in-flight SMS (failed ones do not); with no owner phone alerts stay in the feed only',
+    left(v_alerts::text, 300));
+  perform public.finish_owner_alert((v_alerts -> 0 ->> 'id')::uuid, true, 'Console: logged, not delivered');
+  perform pg_temp.expect(
+    (select sms_status || ':' || sms_error from public.owner_alerts where occurrence_key = 'test19:d') = 'sent:Console: logged, not delivered',
+    'an alert handled in console or sandbox mode keeps a note that it was not delivered');
+
+  -- The 23:30 checks. In the report week: Wed 5 Jan had a paid sale, no close,
+  -- and no PC backup; Mon 3 Jan was closed and gets a backup here; Tue 4 Jan
+  -- had no sales.
+  insert into public.backup_runs (kind, status, created_at) values ('daily_pc', 'success', '2000-01-03 21:00+00');
+  v_report := public.owner_daily_check('2000-01-05');
+  v_report := public.owner_daily_check('2000-01-05');
+  perform pg_temp.expect(
+    v_report @> '{"sales_count": 1, "closed": false, "backup_ok": false}'
+    and (select count(*) from public.owner_alerts
+         where occurrence_key in ('day_not_closed:2000-01-05', 'backup_stale:2000-01-05')) = 2
+    and (select payload @> '{"business_date": "2000-01-05", "revenue": 13500, "sales_count": 1}' from public.owner_alerts
+         where occurrence_key = 'day_not_closed:2000-01-05'),
+    'owner_daily_check: a day with sales, no close, and no backup queues day_not_closed (with the figures) and backup_stale once, even when run twice',
+    v_report::text);
+  perform pg_temp.expect(
+    public.owner_daily_check('2000-01-03') @> '{"closed": true, "backup_ok": true, "alerts": []}'
+    and public.owner_daily_check('2000-01-04') @> '{"sales_count": 0, "alerts": []}',
+    'owner_daily_check: a closed day with a backup, and a day without sales, queue nothing');
+
+  v_message := pg_temp.run_as(v_owner, 'select public.claim_owner_alerts()')
+    || '/' || pg_temp.run_as(v_owner, $q$ select public.owner_daily_check('2000-01-05') $q$)
+    || '/' || pg_temp.run_as(v_counter, $q$ select public.finish_owner_alert(gen_random_uuid(), true) $q$);
+  perform pg_temp.expect(v_message like 'permission denied%/permission denied%/permission denied%',
+    'only the server (service role) can claim, finish, or run the daily checks', v_message);
 
   -- Owner alerts are claimed once per occurrence (a rerun job or a retry
   -- cannot queue a second SMS for the same thing).

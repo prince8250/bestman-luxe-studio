@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { dbErrorMessage, GENERIC_DB_MESSAGE } from "@/lib/actions/db-errors";
 import { fail, ok, runPosAction, type ActionResult } from "@/lib/actions/result";
+import { sendOwnerAlertsLater } from "@/lib/alerts/send";
 import { closeDaySchema, type CloseDayInput, type DayReportFiles } from "@/lib/close-day/close-day";
 import { dayReportFiles, loadClosedDay } from "@/lib/close-day/data";
 import type { Database } from "@/lib/database.types";
@@ -49,6 +50,8 @@ export async function closeDayAction(input: CloseDayInput): Promise<ActionResult
     const { error } = await supabase.rpc("close_day", args);
     if (error) return fail(dbErrorMessage(error, "close_day failed"));
     refresh();
+    // The day summary (and any cash difference) SMS to the owner.
+    sendOwnerAlertsLater();
 
     // The files for the automatic download. The close is already saved, so a
     // failure here only means the page offers the download again.
