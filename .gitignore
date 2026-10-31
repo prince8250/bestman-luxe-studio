@@ -50,3 +50,7 @@ supabase/.branches/
 
 # Claude Code plugin state (not project files)
 **/.claude/autoharness/
+
+# The studio PC backup settings hold the backup token (tools/pc-backup/README.md).
+tools/pc-backup/config.json
+tools/pc-backup/backup-log.txt

@@ -1,0 +1,6 @@
+{
+  "siteUrl": "https://YOUR-POS-ADDRESS",
+  "token": "PASTE-THE-BACKUP_EXPORT_TOKEN-HERE",
+  "backupFolder": "C:\\BestmanBackups",
+  "retentionDays": 180
+}

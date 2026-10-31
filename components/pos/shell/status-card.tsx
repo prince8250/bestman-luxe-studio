@@ -54,6 +54,11 @@ async function BackupStatusCard() {
           </div>
         ))}
       </dl>
+      {rows[0].stale && (
+        <p className="mt-2 text-xs text-pos-text-muted">
+          {rows[0].at ? "No PC backup for over 36 hours: normal if the studio was closed and the PC off." : "The PC backup is not set up yet."}
+        </p>
+      )}
     </Link>
   );
 }
