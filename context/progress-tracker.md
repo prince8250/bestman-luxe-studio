@@ -8,7 +8,7 @@ Update this file whenever the current phase, active feature, or implementation s
 
 ## Current Goal
 
-- `22-weekly-cloud-backup.md` (waiting for the developer to start it).
+- `23-pos-gallery.md` (waiting for the developer to start it).
 
 ## Completed
 
@@ -54,6 +54,8 @@ Update this file whenever the current phase, active feature, or implementation s
 
 - **21 Backup to the studio PC**: `tools/pc-backup/bestman-backup.ps1` (Windows PowerShell 5.1, plain ASCII, nothing to install) reads `config.json` (`siteUrl`, `token` = `BACKUP_EXPORT_TOKEN`, `backupFolder` default `C:\BestmanBackups`, `retentionDays` default 180; optional `retryDelaySeconds` 120, `catchUpDays` 7; `config.example.json` is the template, `config.json` is gitignored). Each run: downloads the export (3 tries a few minutes apart; a 401 is not retried), unpacks the gzip, checks it is a complete Bestman backup with row counts (with .NET's JSON reader and its limit raised, because 5.1's `ConvertFrom-Json` refuses files over about 2 MB), and puts it in `<folder>\YYYY\MM\bestman-backup-YYYY-MM-DD.json`, replacing today's file from an earlier run; saves today's day report CSV and HTML the same way; looks back 7 days and re-saves a day report that is missing or changed (ignoring its "made at" line; days without sales and without a saved file are skipped), so late sales reach the PC the next morning; deletes full backups whose date is older than the retention period (day reports kept); writes `backup-log.txt` (trimmed past 1 MB; never the token); reports to `/api/backup/heartbeat` (`daily_pc`, success with file, size, and row counts, or failed with the reason). Every file goes through a `.partial` name and is checked before it replaces anything (a run cut off leaves only `.partial` files, removed by the next run). Business dates are Accra = UTC. `tools/pc-backup/install-task.ps1`: Scheduled Task "Bestman POS backup": at log-on + 3 minutes, then every 2 hours for 16 hours; runs as the signed-in user only while signed in (no password stored), starts late if a run was missed, never two at once, network check off, 30-minute limit; `-DryRun` builds and checks the task without installing, `-Uninstall` removes it. `tools/pc-backup/README.md`: install steps, the log, the off-site copy (Google Drive or OneDrive), a test plan for the PC, removal. POS: the Backups page shows the last studio PC backup and how long ago, with a calm warning after 36 hours (normal when the studio was closed and the PC off); the sidebar card adds the same note; the 23:30 job already alerts on days with sales but no PC backup (spec 19). Verified on this Windows 11 development PC with Windows PowerShell 5.1.26100 against the dev server and the development database: with the server down the script tried 3 times, logged it, and exited 1, and the next run caught up; run 1 saved today's backup (301 KB) and both reports plus the previous 7 days' reports, and the POS recorded the run; a same-day run replaced today's three files (still three, newer times), re-saved an altered 30 Oct report as "changed since it was saved", left unchanged days alone, and deleted a backup dated 15 Jan 2026 while keeping that day's report. That run first exposed a 5.1 bug (`File.Replace` with `$null`, which PowerShell passes as an empty path), fixed with `[NullString]::Value`; the failed run was recorded with its reason and the earlier backup stayed intact. The install script was checked with `-DryRun` only: **not installed** on this PC (it would change the developer's Windows settings), so the schedule itself, the log-on delay, and the next-morning finalization over a real night are to be tested on the studio PC with the README's test plan. Test rows left in `backup_runs` (three studio PC runs from these checks).
 
+- **22 Weekly cloud backup and the Backups page**: `.github/workflows/weekly-backup.yml` (Sundays at **23:23 UTC**, not 23:00: GitHub's docs say the queue is busiest on the hour and jobs can be dropped; plus "Run workflow"; one run at a time, 30-minute limit) installs the PostgreSQL 17 client from apt.postgresql.org and runs `tools/cloud-backup/weekly-backup.sh`: `pg_dump` (custom format, compressed) of `public`, `private`, `supabase_migrations`, and `auth` through the **session pooler** (Supabase's docs now recommend the direct connection for `pg_dump`, but it is IPv6-only without the paid IPv4 add-on and GitHub's runners have no IPv6), checks the file opens with `pg_restore` and holds the sales data, uploads it to the private `backups` bucket as `weekly/bestman-YYYY-MM-DD.dump` (upsert), deletes dumps older than 12 weeks, and always reports the run (success, or failure with the reason) to the heartbeat with `BACKUP_WEBHOOK_TOKEN` and row counts from `private.restore_counts()`; before the POS is deployed (no `POS_URL` secret) it writes the `backup_runs` row with the service-role key instead. Secrets: `SUPABASE_DB_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `BACKUP_WEBHOOK_TOKEN`, optional `POS_URL` (never in files). `/pos/backups` (owner): status cards for the studio PC (warning after 36 hours, noting a closed day with the PC off is normal) and the weekly cloud backup (warning after 8 days or none yet), Download backup now / day report (spec 20), the weekly dumps with **Download** (`/pos/backups/weekly?name=`: owner only, the name must match `bestman-YYYY-MM-DD.dump`, redirects to a Storage signed link valid for one minute), and the recent runs with size and record counts. `docs/restore-guide.md` first draft: setting up the workflow (private repo, secrets, merge to `main`, first run), path A from a weekly dump with `pg_restore` (extensions, logins first, then the POS schemas, buckets and policies from the migration), path B from a daily JSON with `npm run restore:import`, path C Supabase Pro backups, pointing the app at the restored project, and checking against a day report. Verified: the script's bash syntax and the prune rule (only `bestman-*.dump` older than 12 weeks); the Backups page at 1280 and 375px (PC fresh; weekly "none yet" shows its warning); with a placeholder dump uploaded to the dev bucket the list showed it and Download returned it through the signed link, and a made-up name was refused (400); the placeholder was removed. **Not verified yet**: a real workflow run (it needs the developer to make the repository private, add the secrets, and merge `dev` into `main`; then Actions > Weekly cloud backup > Run workflow) and restoring a weekly dump into a test project (with the other restore checks at the restore drill).
+
 ## Development Database And Test Accounts
 
 - Development project: `bestman-luxe-studio` (ref `xpcsmqwdpswnvzyterwx`, eu-central-1, free plan). The CLI is linked (`npx supabase link --project-ref xpcsmqwdpswnvzyterwx`); `npm run db:push` applies new migrations.
@@ -67,7 +69,7 @@ Update this file whenever the current phase, active feature, or implementation s
 
 ## Next Up
 
-- `22-weekly-cloud-backup.md`, then `23-pos-gallery.md`.
+- `23-pos-gallery.md`, then `24-pos-offers.md`.
 
 ## Build Order
 
@@ -106,7 +108,7 @@ Specs live in `context/feature-specs/`. Build in order unless the developer says
 **Phase 5: Backups**
 - [x] 20 Backup export endpoints and manual download
 - [x] 21 Backup to the studio PC (while it is on)
-- [ ] 22 Weekly cloud backup and the Backups page
+- [x] 22 Weekly cloud backup and the Backups page
 
 **Milestone: the studio can start using the POS here**, before the website exists (see open question 11).
 
@@ -152,7 +154,8 @@ Specs live in `context/feature-specs/`. Build in order unless the developer says
 - **Sample data must be very easy to remove** (developer, 2026-10-30): all sample rows are removable in one step before real use (see spec 02 notes when built).
 - **Dependencies**: the developer allowed adding dependencies as needed; each one is listed in the spec report (2026-10-30).
 - **Open questions are asked one by one** as their spec comes up (developer, 2026-10-30).
-- **GitHub repo stays public** (developer's choice, 2026-10-30), although `code-standards.md` says private. No secrets are committed; `.env.local` is gitignored.
+- **GitHub repo**: was kept public (developer, 2026-10-30); for the weekly cloud backup the developer decided to make it **private** (2026-10-31), as backup-and-recovery.md requires (run history and logs not public). The developer changes it in GitHub > Settings. No secrets are committed either way; `.env.local` is gitignored.
+- **13 Hosting cost**: the client agreed to **Supabase Pro and Vercel Pro** for production (developer, 2026-10-31). Recheck the prices at launch (spec 38).
 - **8 Receipt printer**: 80mm thermal (model not known yet), 2 copies by default (developer, 2026-10-30). Setup steps in `docs/owner-guide-draft.md`.
 - **9 Customer phone at the counter**: optional, encouraged (developer, 2026-10-30).
 - **14 Windows version and folder**: the studio PC's Windows version is not known yet (developer, 2026-10-31), so the backup targets Windows PowerShell 5.1, built into both Windows 10 and 11; confirm on the PC at install. Backup folder: the default `C:\BestmanBackups`; `tools/pc-backup/README.md` explains pointing it inside Google Drive for desktop or OneDrive for an off-site copy.
@@ -174,7 +177,6 @@ Resolve each before the spec shown in brackets. Record the answer in the relevan
 11. **Soft launch** [after 22] Start using the POS at the studio before the website is ready? (Default: yes; requires Supabase Pro and Vercel Pro from that point, see 13.)
 
 **Backups and hosting**
-13. **Hosting cost** [22, 38] Production needs Supabase Pro (about $25/month, daily backups, no pausing) and Vercel Pro (Hobby is non-commercial only). The client must agree to pay. Recheck prices before quoting.
 
 **Website and booking**
 18. **"No preference" staff** [32] Allowed? (Default: yes.)

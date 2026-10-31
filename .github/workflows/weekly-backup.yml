@@ -1,0 +1,52 @@
+# Weekly cloud backup (spec 22, backup-and-recovery.md Layer 2): a full dump
+# of the POS database into the private "backups" bucket, every Sunday night
+# and whenever it is run by hand (Actions > Weekly cloud backup > Run workflow).
+# The work is in tools/cloud-backup/weekly-backup.sh. Secrets are GitHub
+# secrets, never in this file (README of the restore guide: docs/restore-guide.md).
+#
+# GitHub runs scheduled workflows only from the default branch (main), in UTC
+# (= Accra time), and its queue is busiest on the hour, so this runs at 23:23.
+
+name: Weekly cloud backup
+
+on:
+  schedule:
+    - cron: "23 23 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: weekly-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      # The Supabase Postgres major version; pg_dump must be the same or newer.
+      PG_MAJOR: "17"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the PostgreSQL ${{ env.PG_MAJOR }} client
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq "postgresql-client-${PG_MAJOR}"
+          "/usr/lib/postgresql/${PG_MAJOR}/bin/pg_dump" --version
+
+      - name: Back up the database
+        env:
+          PG_BIN: /usr/lib/postgresql/${{ env.PG_MAJOR }}/bin
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          BACKUP_WEBHOOK_TOKEN: ${{ secrets.BACKUP_WEBHOOK_TOKEN }}
+          POS_URL: ${{ secrets.POS_URL }}
+        run: bash tools/cloud-backup/weekly-backup.sh
