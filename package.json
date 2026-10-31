@@ -16,7 +16,8 @@
     "db:remove-sample": "supabase db query --linked \"select public.remove_sample_data()\"",
     "test:db": "node tools/db/run-db-tests.mjs",
     "assets:logo": "node tools/assets/make-logo.mjs",
-    "test:db:local": "node tools/db/local-check.mjs"
+    "test:db:local": "node tools/db/local-check.mjs",
+    "sms:test": "node tools/sms/send-test.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",
@@ -49,6 +50,7 @@
     "@vitejs/plugin-react": "^6.1.2",
     "eslint": "^9",
     "eslint-config-next": "16.4.3",
+    "jiti": "^2.7.0",
     "jsdom": "^30.1.3",
     "sharp": "^0.35.5",
     "supabase": "^2.122.0",

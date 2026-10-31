@@ -10,7 +10,7 @@
 | Database       | Supabase Postgres                         | All data                                                          |
 | POS auth       | Supabase Auth (email + password)          | POS users only: one owner and the counter accounts. No customer accounts |
 | File storage   | Supabase Storage                          | Gallery, staff, catalog images; private weekly backup files       |
-| SMS            | Ghana SMS provider (Arkesel, mNotify, or Hubtel; open question) | Booking confirmation SMS, behind one adapter in `lib/sms` |
+| SMS            | Arkesel (SMS API v2; chosen by the developer, 2026-10-31) | Booking confirmation SMS and owner alerts, behind one adapter in `lib/sms` |
 | Bot protection | Cloudflare Turnstile (free)               | Public booking form                                               |
 | Hosting        | Vercel                                    | Free Hobby tier while building only. **Hobby is non-commercial only**, so a paid plan is required at launch |
 | Weekly backup  | GitHub Actions scheduled workflow + `pg_dump` | Weekly full database dump uploaded to a private bucket        |

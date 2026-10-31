@@ -8,7 +8,7 @@ Update this file whenever the current phase, active feature, or implementation s
 
 ## Current Goal
 
-- `18-sms-adapter.md` (waiting for the developer to start it; open question 16, the SMS provider, comes first).
+- `19-owner-activity-and-alerts.md` (waiting for the developer to start it; open question 7, owner alerts, comes first).
 
 ## Completed
 
@@ -46,6 +46,8 @@ Update this file whenever the current phase, active feature, or implementation s
 
 - **17 Close day**: `/pos/close-day` (owner and counter), `?date=` (today by default; earlier days with sales and no close, up to 14 back, are offered in a list and named in a notice). **Step 1, the blind count**: one big "Cash in the drawer" field (the opening float included), opening float prefilled from Settings (a different one needs a reason), optional MoMo total from the MoMo phone, note; Enter or the button opens a confirm dialog ("You counted GHS X. Only the owner can reopen a closed day."). Nothing on this step knows the expected cash: the page reads the day report only once the day has an active close. `closeDayAction` (Zod, same schema as the form, `lib/close-day/close-day.ts`) calls `close_day` (spec 02: expected = float + cash payment rows, refunds negative; stores the close; queues the `day_summary` alert and, beyond the tolerance, `cash_difference`), then returns the day report so the browser saves it automatically (HTML + CSV from spec 16, `bestman-day-report-YYYY-MM-DD.*`). **Step 2** (any day with an active close): counted, expected, and the difference in large Bebas Neue (green at zero, red otherwise, with a plain sentence), who closed and when, the float reason and note; payments by method with MoMo on the phone vs MoMo in the POS (flagged when they differ); services per staff (to check against the STAFF COPY slips); the day's sales, services, revenue, voids, card. Buttons: **Print close slip** (80mm, black and white, one page as long as the slip, "Counted by / Checked by" lines), **Download day report** (`dayReportFilesAction`, `day.closeReport`: refuses a day without an active close; the counter's only report), End-of-day report (spec 16 page), and for the owner **Reopen day** (reason required → `reopen_day`, logged). Owner: **Past closes** (last 60 days, reopened closes kept with who and why, each links to its day). The counter's sidebar card now reads `day_status()`: "Day open since 08:12" (the first sign-in or sale of the day, by anyone) or "Day closed at 20:41" with who closed it. Migration `20261031100000`: `unclosed_days()` (dates and sale counts only, never money) and `day_status()`, POS users only, each over a private builder that takes the date. Owner guide: "Closing the day" (why the count is blind; allow Chrome's multiple downloads once). Database tests (143): a hand-calculated day (1 Feb 2000) with cash, MoMo, card, a 20.00 cash refund through `edit_sale_item`, and a void: expected 330.00, counted 325.00, difference -5.00, MoMo 80, card 100, 4 sales, the float reason stored, both alerts queued; the day is listed as not closed before and not after; a second close refused; reopen without a reason refused and by the counter refused; reopen with a reason logged, closed again, both closes kept; the new functions refused to visitors and the private builders to POS users. Unit tests for the form schema. Verified in the browser as the owner at 1280, 1024, 768, and 375px on Fri 30 Oct (8 sales, never closed): the page HTML (91 KB) and its React data (38 KB) contained no expected amount, no cash total, and no `expected` field before the count; a missing count and a changed float without a reason were refused on screen; counted 1,425.00 → expected 1,430.00 (= 250 float + 1,180 cash, worked out beforehand from the database), difference -5.00 in red, MoMo 150 vs 270 flagged; `day_summary` and `cash_difference` alerts queued (pending until spec 19); the action's response carried the day report for the download; reopen without a reason refused, with a reason it went back to a blank count; closed again at 1,430.00 (difference 0.00 in green) and Past closes shows both. The close slip printed through headless Chrome to one 80 × 138mm page. Not verified by hand: the screens signed in as the counter (the database tests cover close and no reopen; the Reopen button is owner-only), the files landing in the PC's Downloads folder (the built-in browser does not show downloads), and printing on the studio's printer.
 
+- **18 SMS adapter (Arkesel)**: `lib/sms/index.ts` (`server-only`): `sendSms({ to, message })` normalises the number (`lib/phone.ts`), refuses an empty text or one longer than 3 SMS, and returns a typed `SmsResult` (`{ ok, mode, provider, id, segments }` or `{ ok: false, error, message }` with `invalid_phone`, `empty_message`, `too_long`, `not_configured`, `no_balance`, `rejected`, `provider_error`, `network`); it never throws, so a failed SMS cannot break a sale or a booking. `SMS_MODE`: `console` (logs; the text only outside production, a masked number in production), `sandbox` (Arkesel's test mode: accepted and listed in the Arkesel SMS history, never delivered or billed), `live`. The server refuses to start in sandbox or live mode without `SMS_API_KEY` and `SMS_SENDER_ID` (`lib/env.ts`). `lib/sms/arkesel.ts`: the only file that knows Arkesel (SMS API v2, `POST https://sms.arkesel.com/api/v2/sms/send`, `api-key` header, recipients as `233...`; HTTP 402 → `no_balance`, 403/422 → `rejected`, a refused key or sender ID → `not_configured`; 15-second timeout); its logs carry the status, Arkesel's own message, and a masked number, never the text. `lib/sms/length.ts`: GSM-7 vs UCS-2 length and parts (160/153, 70/67) and `plainSmsText` (curly quotes, dashes, ellipsis, odd spaces to plain characters). `lib/sms/templates.ts`: `bookingConfirmationSms` (studio, service, Accra date and time, booking code, studio phone; long names shortened to stay one SMS). `npm run sms:test -- <phone> [--live]` (`tools/sms/send-test.mjs`) sends one test message through the real module with `.env.local` (live needs `--live`). New dev dependency: `jiti` (was already installed through Tailwind and Vite; now direct, for the script). Arkesel's API was read from its current OpenAPI file (v2.4.0). Tests: Ghana formats (dashes, spaces, `233`, `+233`, `00233`, 9 digits, landlines, a foreign number; invalid ones refused), SMS length rules, the template in one SMS (also with a very long service name and a curly apostrophe), the Arkesel request and every error mapping with a fake `fetch` (and that no log contains the text or the full number), console mode, `sendSms` checks, and the env rule. Verified: `npm run sms:test -- 024 456 5866` in console mode logged a 76-character, one-SMS message. **Not verified**: a real SMS (the developer's API key and approved sender ID are not in `.env.local` yet); next step is sandbox mode, then one live SMS to the developer's phone.
+
 ## Development Database And Test Accounts
 
 - Development project: `bestman-luxe-studio` (ref `xpcsmqwdpswnvzyterwx`, eu-central-1, free plan). The CLI is linked (`npx supabase link --project-ref xpcsmqwdpswnvzyterwx`); `npm run db:push` applies new migrations.
@@ -59,7 +61,7 @@ Update this file whenever the current phase, active feature, or implementation s
 
 ## Next Up
 
-- `18-sms-adapter.md`, then `19-owner-activity-and-alerts.md`.
+- `19-owner-activity-and-alerts.md`, then `20-backup-export-endpoints.md`.
 
 ## Build Order
 
@@ -92,7 +94,7 @@ Specs live in `context/feature-specs/`. Build in order unless the developer says
 - [x] 15 Dashboard
 - [x] 16 Reports: day, week, month, staff, changes
 - [x] 17 Close day (blind cash-up)
-- [ ] 18 SMS adapter
+- [x] 18 SMS adapter
 - [ ] 19 Owner activity feed and SMS alerts
 
 **Phase 5: Backups**
@@ -147,6 +149,7 @@ Specs live in `context/feature-specs/`. Build in order unless the developer says
 - **GitHub repo stays public** (developer's choice, 2026-10-30), although `code-standards.md` says private. No secrets are committed; `.env.local` is gitignored.
 - **8 Receipt printer**: 80mm thermal (model not known yet), 2 copies by default (developer, 2026-10-30). Setup steps in `docs/owner-guide-draft.md`.
 - **9 Customer phone at the counter**: optional, encouraged (developer, 2026-10-30).
+- **16 SMS provider**: **Arkesel** (developer, 2026-10-31). The developer has an account; the API key (Dashboard → SMS API → generate a Main API key, preferably a separate sub-key for the POS) and an approved sender ID (up to 11 characters, for example `BESTMANLUXE`) go into `.env.local` as `SMS_API_KEY` / `SMS_SENDER_ID`, added by the developer, never pasted in chat. Production needs the same two values in Vercel (spec 38).
 - **15 Internet and power at the studio**: no code needed; the backup MiFi and small UPS recommendation is in `docs/owner-guide-draft.md` for the handover (spec 38).
 - **10 Staff pay**: not decided yet (developer, 2026-10-30). Default kept: v1 reports services done and revenue per staff member only; pay calculations stay in `later/` L4.
 - **12 Products**: sold occasionally, through the Custom item line (developer, 2026-10-30); stock stays in `later/` L6.
@@ -168,7 +171,6 @@ Resolve each before the spec shown in brackets. Record the answer in the relevan
 14. **Windows version and folder** [21] Windows 10 or 11? Backup folder (default `C:\BestmanBackups`), and can it sit inside a Google Drive or OneDrive desktop folder for an off-site copy?
 
 **Website and booking**
-16. **SMS provider** [18] Arkesel, mNotify, or Hubtel; account, API key, sender ID. Needed earlier now, because owner alerts (spec 19) use it.
 18. **"No preference" staff** [32] Allowed? (Default: yes.)
 19. **Booking limits** [34] 2 upcoming bookings per phone and the documented rate limits. (Default: yes.)
 20. **Turnstile** [34] Developer creates the free Cloudflare Turnstile site and keys.
